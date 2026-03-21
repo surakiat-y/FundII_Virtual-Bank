@@ -1,4 +1,4 @@
 @NullMarked
-package com.fundii.base.ui;
+package com.fundii.virtualbank.base.ui;
 
 import org.jspecify.annotations.NullMarked;

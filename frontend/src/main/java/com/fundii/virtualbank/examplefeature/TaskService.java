@@ -1,4 +1,4 @@
-package com.fundii.examplefeature;
+package com.fundii.virtualbank.examplefeature;
 
 import org.jspecify.annotations.Nullable;
 import org.springframework.data.domain.Pageable;

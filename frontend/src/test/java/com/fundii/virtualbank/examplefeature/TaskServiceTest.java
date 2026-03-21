@@ -1,4 +1,4 @@
-package com.fundii.examplefeature;
+package com.fundii.virtualbank.examplefeature;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;

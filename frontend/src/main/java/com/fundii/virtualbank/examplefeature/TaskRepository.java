@@ -1,4 +1,4 @@
-package com.fundii.examplefeature;
+package com.fundii.virtualbank.examplefeature;
 
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Slice;

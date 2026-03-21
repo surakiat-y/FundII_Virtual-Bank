@@ -1,8 +1,8 @@
-package com.fundii.examplefeature.ui;
+package com.fundii.virtualbank.examplefeature.ui;
 
-import com.fundii.base.ui.ViewToolbar;
-import com.fundii.examplefeature.Task;
-import com.fundii.examplefeature.TaskService;
+import com.fundii.virtualbank.base.ui.ViewToolbar;
+import com.fundii.virtualbank.examplefeature.Task;
+import com.fundii.virtualbank.examplefeature.TaskService;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
 import com.vaadin.flow.component.datepicker.DatePicker;

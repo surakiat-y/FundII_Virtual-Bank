@@ -1,4 +1,4 @@
-package com.fundii.base.ui;
+package com.fundii.virtualbank.base.ui;
 
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.applayout.AppLayout;

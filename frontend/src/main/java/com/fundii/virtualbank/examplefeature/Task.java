@@ -1,4 +1,4 @@
-package com.fundii.examplefeature;
+package com.fundii.virtualbank.examplefeature;
 
 import jakarta.persistence.*;
 import org.jspecify.annotations.Nullable;

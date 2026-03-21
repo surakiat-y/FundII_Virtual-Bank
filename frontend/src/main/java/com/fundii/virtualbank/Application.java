@@ -1,4 +1,4 @@
-package com.fundii;
+package com.fundii.virtualbank;
 
 import com.vaadin.flow.theme.lumo.Lumo;
 import org.springframework.boot.SpringApplication;
