@@ -13,6 +13,9 @@ public class UserService {
     @Autowired
     private UserRepository userRepository;
 
+    @Autowired
+    private org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder passwordEncoder;
+
     // ฟังก์ชันสมัครสมาชิก (Register)
     public User registerUser(User user) {
         // 1. เช็คว่ามี Username นี้ซ้ำในระบบหรือยัง
@@ -21,8 +24,8 @@ public class UserService {
             throw new RuntimeException("Username นี้มีคนใช้แล้วครับ!"); // ถ้าซ้ำให้แจ้ง Error
         }
 
-        // 2. เรื่องการเข้ารหัส Password (Hashing) ตามแผน
-        // *เดี๋ยวเราจะมาใส่ตัวเข้ารหัส (BCrypt) ตรงนี้ทีหลังนะครับ ตอนนี้ให้เซฟลงไปตรงๆ ก่อนเพื่อทดสอบ*
+        // 2. เรื่องการเข้ารหัส Password (Hashing)
+        user.setPassword(passwordEncoder.encode(user.getPassword()));
 
         // 3. บันทึกข้อมูลลง Database
         return userRepository.save(user);

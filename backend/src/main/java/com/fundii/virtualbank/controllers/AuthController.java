@@ -20,6 +20,9 @@ public class AuthController {
     @Autowired
     private UserRepository userRepository;
 
+    @Autowired
+    private org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder passwordEncoder;
+
     // 1. สมัครสมาชิก
     @PostMapping("/register")
     public ResponseEntity<?> register(@RequestBody User user) {
@@ -35,8 +38,8 @@ public class AuthController {
     public ResponseEntity<?> login(@RequestBody User loginData) {
         Optional<User> userOpt = userRepository.findByUsername(loginData.getUsername());
         
-        // เช็คว่ามี User ไหม และ Password ตรงไหม (ตอนนี้เช็คแบบ String ธรรมดาก่อน ค่อยใส่ Hash ทีหลัง)
-        if (userOpt.isPresent() && userOpt.get().getPassword().equals(loginData.getPassword())) {
+        // เช็คว่ามี User ไหม และ Password ตรงไหม (ใช้ BCrypt ตรวจสอบ)
+        if (userOpt.isPresent() && passwordEncoder.matches(loginData.getPassword(), userOpt.get().getPassword())) {
             return ResponseEntity.ok(userOpt.get()); // ส่งข้อมูล User กลับไปให้หน้าเว็บ
         } else {
             return ResponseEntity.badRequest().body("Username หรือ Password ไม่ถูกต้อง!");
