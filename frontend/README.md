@@ -1,80 +1,16 @@
-# My Application README
+# React + Vite
 
-- [ ] TODO Replace or update this README with instructions relevant to your application
+This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
-## Project Structure
+Currently, two official plugins are available:
 
-This project has the following structure:
+- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
+- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
 
-```
-src
-├── main/java
-│   └── [application package]
-│       ├── base
-│       │   └── ui
-│       │       ├── ViewToolbar.java
-│       │       └── MainLayout.java
-│       ├── examplefeature
-│       │   ├── ui
-│       │   │   └── TaskListView.java
-│       │   ├── Task.java
-│       │   ├── TaskRepository.java
-│       │   └── TaskService.java                
-│       └── Application.java     
-├── main/resources
-│   ├── META-INF
-│   │   └── resources
-│   │       └── styles.css
-│   └── application.properties 
-└── test/java
-    └── [application package]
-        └── examplefeature
-           └── TaskServiceTest.java                 
-```
+## React Compiler
 
-The main entry point into the application is `Application.java`. This class contains the `main()` method that starts up 
-the Spring Boot application.
+The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
 
-The project follows a *feature-based package structure*, organizing code by *functional units* rather than traditional 
-architectural layers. It includes two feature packages: `base` and `examplefeature`.
+## Expanding the ESLint configuration
 
-* The `base` package contains classes meant for reuse across different features, either through composition or 
-  inheritance. You can use them as-is, tweak them to your needs, or remove them.
-* The `examplefeature` package is an example feature package that demonstrates the structure. It represents a 
-  *self-contained unit of functionality*, including UI components, business logic, data access, and an integration test.
-  Once you create your own features, *you'll remove this package*.
-
-
-## Starting in Development Mode
-
-To start the application in development mode, import it into your IDE and run the `Application` class. 
-You can also start the application from the command line by running: 
-
-```bash
-./mvnw
-```
-
-## Building for Production
-
-To build the application in production mode, run:
-
-```bash
-./mvnw package
-```
-
-To build a Docker image, run:
-
-```bash
-docker build -t my-application:latest .
-```
-
-If you use commercial components, pass the license key as a build secret:
-
-```bash
-docker build --secret id=proKey,src=$HOME/.vaadin/proKey .
-```
-
-## Next Steps
-
-The [Building Apps](https://vaadin.com/docs/v25/building-apps) guides contain hands-on advice for adding features to 
-your application.
+If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
