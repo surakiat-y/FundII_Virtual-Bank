@@ -1,6 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
+import Login from './Login';
 
 const Welcome = () => {
+    const [showLogin, setShowLogin] = useState(false);
     return (
         <div className="h-screen w-full flex overflow-hidden font-sans bg-white">
             {/* ─── Left Half: Hero Image ─── */}
@@ -46,51 +48,52 @@ const Welcome = () => {
                 </nav>
 
                 {/* Center Content Section */}
-                <div className="flex-1 flex flex-col items-center justify-center px-8 md:px-20 lg:px-24">
-                    <div className="w-full max-w-[480px] animate-in fade-in slide-in-from-right-10 duration-700">
+                <div className="flex-1 flex flex-col items-center justify-center px-8 md:px-20 lg:px-24 pt-24 md:pt-32">
+                    {!showLogin ? (
+                        <div className="w-full max-w-[480px] animate-in fade-in slide-in-from-right-10 duration-700">
 
-                        <div className="mb-12">
-                            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-50 border border-slate-100 mb-6">
-                                <span className="text-slate-400 font-bold text-[10px] uppercase tracking-widest">
-                                    Secure & Intelligent Platform
-                                </span>
+                            <div className="mb-12">
+                                <h1 className="text-4xl md:text-5xl lg:text-6xl font-black text-slate-900 mb-6 tracking-tight leading-[1.1]">
+                                    Elevate Your <br />
+                                    <span className="text-emerald-700">Financial Assets</span>
+                                </h1>
+
+                                <p className="text-slate-500 text-lg leading-relaxed max-w-md">
+                                    Experience a seamless fusion of security and innovation.
+                                    Manage your virtual assets with tools designed for the modern era.
+                                </p>
                             </div>
 
-                            <h1 className="text-4xl md:text-5xl lg:text-6xl font-black text-slate-900 mb-6 tracking-tight leading-[1.1]">
-                                Elevate Your <br />
-                                <span className="text-emerald-700">Financial Assets</span>
-                            </h1>
+                            {/* Action Area */}
+                            <div className="flex flex-col gap-4 w-full">
+                                <button className="w-full bg-[#065f46] hover:bg-[#054634] active:scale-[0.98] text-white py-5 px-10 text-lg font-bold rounded-2xl shadow-[0_20px_40px_-15px_rgba(6,95,70,0.3)] transition-all duration-300 transform hover:-translate-y-1">
+                                    Create New Account
+                                </button>
 
-                            <p className="text-slate-500 text-lg leading-relaxed max-w-md">
-                                Experience a seamless fusion of security and innovation.
-                                Manage your virtual assets with tools designed for the modern era.
-                            </p>
-                        </div>
-
-                        {/* Action Area */}
-                        <div className="flex flex-col gap-4 w-full">
-                            <button className="w-full bg-[#065f46] hover:bg-[#054634] active:scale-[0.98] text-white py-5 px-10 text-lg font-bold rounded-2xl shadow-[0_20px_40px_-15px_rgba(6,95,70,0.3)] transition-all duration-300 transform hover:-translate-y-1">
-                                Create New Account
-                            </button>
-
-                            <button className="w-full bg-transparent hover:bg-slate-50 active:scale-[0.98] text-slate-700 py-5 px-10 text-lg font-bold rounded-2xl border-2 border-slate-100 hover:border-slate-200 transition-all duration-300">
-                                Log In to Your Portal
-                            </button>
-                        </div>
-
-                        {/* Trust Badges */}
-                        <div className="mt-16 flex items-center justify-between opacity-50 grayscale hover:opacity-100 hover:grayscale-0 transition-all duration-500">
-                            <div className="flex flex-col">
-                                <span className="text-[10px] font-black uppercase tracking-[3px] text-slate-400">Security Standard</span>
-                                <span className="text-xs font-bold text-slate-900">AES-256 BIT ENCRYPTION</span>
+                                <button 
+                                    onClick={() => setShowLogin(true)}
+                                    className="w-full bg-transparent hover:bg-slate-50 active:scale-[0.98] text-slate-700 py-5 px-10 text-lg font-bold rounded-2xl border-2 border-slate-100 hover:border-slate-200 transition-all duration-300"
+                                >
+                                    Log In to Your Portal
+                                </button>
                             </div>
-                            <div className="h-8 w-px bg-slate-200 mx-4"></div>
-                            <div className="flex flex-col">
-                                <span className="text-[10px] font-black uppercase tracking-[3px] text-slate-400">Available</span>
-                                <span className="text-xs font-bold text-slate-900">24/7 CLOUD BANKING</span>
+
+                            {/* Trust Badges */}
+                            <div className="mt-16 flex items-center justify-between opacity-50 grayscale hover:opacity-100 hover:grayscale-0 transition-all duration-500">
+                                <div className="flex flex-col">
+                                    <span className="text-[10px] font-black uppercase tracking-[3px] text-slate-400">Security Standard</span>
+                                    <span className="text-xs font-bold text-slate-900">AES-256 BIT ENCRYPTION</span>
+                                </div>
+                                <div className="h-8 w-px bg-slate-200 mx-4"></div>
+                                <div className="flex flex-col">
+                                    <span className="text-[10px] font-black uppercase tracking-[3px] text-slate-400">Available</span>
+                                    <span className="text-xs font-bold text-slate-900">24/7 CLOUD BANKING</span>
+                                </div>
                             </div>
                         </div>
-                    </div>
+                    ) : (
+                        <Login onBack={() => setShowLogin(false)} />
+                    )}
                 </div>
 
                 {/* Footer Navigation */}
