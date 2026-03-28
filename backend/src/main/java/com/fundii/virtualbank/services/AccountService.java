@@ -18,13 +18,13 @@ public class AccountService {
     @Autowired
     private UserRepository userRepository;
 
-    // ฟังก์ชันเปิดบัญชีใหม่ให้ผู้ใช้
-    public Account createAccount(Long userId, String accountName) {
+    // 🔥 แก้ไข Method ให้รับ savingsGoal เพิ่มเข้ามา
+    public Account createAccount(Long userId, String accountName, BigDecimal savingsGoal) {
         // 1. หาตัว User ก่อนว่ามีจริงไหม
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("ไม่พบผู้ใช้งานนี้ในระบบ"));
 
-        // เช็คว่า User โดนระงับการใช้งานอยู่หรือไม่ (ถ้าโดนแบนห้ามเปิดบัญชี)
+        // เช็คว่า User โดนระงับการใช้งานอยู่หรือไม่
         if (!user.getStatus().equals("ACTIVE")) {
             throw new RuntimeException("ผู้ใช้งานถูกระงับ ไม่สามารถเปิดบัญชีใหม่ได้");
         }
@@ -32,11 +32,12 @@ public class AccountService {
         // 2. สร้างบัญชีใหม่
         Account newAccount = new Account();
         newAccount.setUser(user);
-        newAccount.setAccountName(accountName); // เช่น "บัญชีหลัก" หรือ "เงินออม"
-        newAccount.setBalance(BigDecimal.ZERO); // เริ่มต้นมีเงิน 0 บาท
-        newAccount.setStatus("ACTIVE"); // กำหนดสถานะกระเป๋าเป็นพร้อมใช้งาน
+        newAccount.setAccountName(accountName);
+        newAccount.setBalance(BigDecimal.ZERO);
+        newAccount.setSavingsGoal(savingsGoal); // 🔥 บันทึกเป้าหมายการออมลงไปด้วย
+        newAccount.setStatus("ACTIVE");
         
-        // สุ่มเลขบัญชี 10 หลัก (String.format ช่วยเติมเลข 0 ข้างหน้าให้ถ้าสุ่มได้ไม่ถึง 10 หลัก)
+        // สุ่มเลขบัญชี 10 หลัก
         String randomAccNum = String.format("%010d", (long) (Math.random() * 10000000000L));
         newAccount.setAccountNumber(randomAccNum);
 
