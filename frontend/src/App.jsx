@@ -5,6 +5,8 @@ import CreateAccount from './pages/CreateAccount';
 import Dashboard from './pages/Dashboard';
 import AdminDashboard from './pages/AdminDashboard';
 import Statement from './pages/Statement';
+import Investment from './pages/Investment';
+import AdminPanel from './pages/AdminPanel';
 import './App.css';
 
 function App() {
@@ -17,6 +19,8 @@ function App() {
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/admin-dashboard" element={<AdminDashboard />} />
         <Route path="/statement" element={<Statement />} />
+        <Route path="/investment" element={<Investment />} />
+        <Route path="/admin" element={<AdminPanel />} />
       </Routes>
     </Router>
   );
