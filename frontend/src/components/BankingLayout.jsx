@@ -22,7 +22,7 @@ const BankingLayout = ({ children }) => {
             </div>
 
             {/* ─── Right Half: Main Content ─── */}
-            <div className="w-full lg:w-1/2 h-full flex flex-col relative">
+            <div className="w-full lg:w-1/2 h-full flex flex-col relative overflow-y-auto scroll-smooth">
                 {/* Top Navigation / Branding */}
                 <nav className="absolute top-0 left-0 right-0 p-8 flex justify-between items-center z-20">
                     <div className="flex items-center gap-3">
@@ -39,8 +39,10 @@ const BankingLayout = ({ children }) => {
                 </nav>
 
                 {/* Center Content Section */}
-                <div className="flex-1 flex flex-col items-center justify-center px-8 md:px-20 lg:px-24 pt-24 md:pt-32">
-                    {children}
+                <div className="flex-1 flex flex-col items-center w-full px-8 md:px-20 lg:px-24 py-16 md:py-24">
+                    <div className="w-full flex flex-col items-center justify-center min-h-full">
+                        {children}
+                    </div>
                 </div>
 
                 {/* Footer Navigation */}

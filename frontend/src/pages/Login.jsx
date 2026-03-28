@@ -74,15 +74,14 @@ const Login = () => {
                     </div>
                 )}
 
-                <form onSubmit={handleLogin} className="flex flex-col gap-5">
+                <form onSubmit={handleLogin} className="flex flex-col gap-5" autoComplete="off">
                     <div className="flex flex-col gap-2">
                         <label className="text-[10px] font-black uppercase tracking-[2px] text-slate-400 ml-1">Username</label>
                         <input
                             type="text"
                             value={username}
-                            onChange={(e) => setUsername(e.target.value)}
+                             onChange={(e) => setUsername(e.target.value)}
                             required
-                            placeholder="Enter your username"
                             className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-6 py-4 focus:outline-none focus:border-emerald-500/30 focus:bg-white transition-all duration-300 text-slate-700 font-medium"
                         />
                     </div>
@@ -94,7 +93,6 @@ const Login = () => {
                             value={password}
                             onChange={(e) => setPassword(e.target.value)}
                             required
-                            placeholder="••••••••"
                             className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-6 py-4 focus:outline-none focus:border-emerald-500/30 focus:bg-white transition-all duration-300 text-slate-700 font-medium"
                         />
                     </div>
