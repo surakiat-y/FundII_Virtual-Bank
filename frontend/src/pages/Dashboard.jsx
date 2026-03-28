@@ -82,9 +82,9 @@ const Dashboard = () => {
         return () => clearInterval(interval);
     }, [navigate]);
 
-    // 🔥 ฟังก์ชันยืนยันการขายแบบระบุหน่วย
+    // 🔥 ฟังก์ชันขายกองทุนแบบระบุหน่วย
     const handleConfirmSell = async () => {
-        if (!sellDestId || !sellUnits || sellUnits <= 0) {
+        if (!sellDestId || !sellUnits || parseFloat(sellUnits) <= 0) {
             alert("กรุณาเลือกกระเป๋าและใส่จำนวนหน่วยที่ถูกต้องโบร!");
             return;
         }
@@ -119,7 +119,28 @@ const Dashboard = () => {
         }
     };
 
-    // (Code setDestAccountName, logout, saveSlip เหมือนเดิม)
+    // 🔥 ฟังก์ชันบันทึก Favorite บัญชี
+    const handleAddFavorite = async () => {
+        const nickname = prompt("ตั้งชื่อเล่นสำหรับบัญชีนี้:");
+        if (!nickname) return;
+        try {
+            await fetch('http://localhost:8080/api/favorites/add', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    userId: user.id,
+                    nickname,
+                    accountNumber: slipData.toAccount,
+                    ownerName: slipData.toName
+                })
+            });
+            alert("บันทึกบัญชีคนโปรดแล้วโบร!");
+            fetchFavorites(user.id);
+        } catch (err) {
+            console.error(err);
+        }
+    };
+
     useEffect(() => {
         if (destAccountNumber.length === 10) {
             fetch(`http://localhost:8080/api/accounts/search?accountNumber=${destAccountNumber}`)
@@ -259,7 +280,7 @@ const Dashboard = () => {
                             })}
                         </div>
 
-                        {/* 🔥 ส่วน My Assets พร้อมระบบ Sell แบบเลือกหน่วย */}
+                        {/* 🔥 My Assets Section */}
                         <div className="px-2">
                             <h2 className="text-2xl font-black text-slate-800 mb-6">My Assets 📈</h2>
                             <div className="grid grid-cols-1 gap-4">
@@ -273,7 +294,7 @@ const Dashboard = () => {
                                             <div className="flex items-center gap-4">
                                                 <div className="w-12 h-12 bg-indigo-50 rounded-2xl flex items-center justify-center font-black text-indigo-600">{fundInfo?.fundCode.slice(-2) || '??'}</div>
                                                 <div>
-                                                    <p className="text-[10px] font-black text-slate-400 uppercase">{fundInfo?.fundName || 'Loading...'}</p>
+                                                    <p className="text-[10px] font-black text-slate-400 uppercase">{fundInfo?.fundName || 'กองทุนรวม'}</p>
                                                     <p className="text-xl font-black">{item.units.toFixed(4)} Units</p>
                                                     <button 
                                                         onClick={() => { setSelectedAsset(item); setSellUnits(item.units); setSellDestId(accounts[0]?.id); setShowSellModal(true); }}
@@ -284,7 +305,7 @@ const Dashboard = () => {
                                                 </div>
                                             </div>
                                             <div className="text-right">
-                                                <p className={`text-sm font-bold ${profit >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>{profit >= 0 ? '+' : ''}{profit.toFixed(2)} THB ({profitPercent.toFixed(2)}%)</p>
+                                                <p className={`text-sm font-bold ${profit >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>{profit >= 0 ? '▲' : '▼'} {profit >= 0 ? '+' : ''}{profit.toFixed(2)} THB ({profitPercent.toFixed(2)}%)</p>
                                                 <p className="text-[10px] font-bold text-slate-400 uppercase">Market Value: ฿{(item.units * currentNav).toLocaleString()}</p>
                                             </div>
                                         </div>
@@ -306,7 +327,7 @@ const Dashboard = () => {
                                     <div className="text-right"><p className="text-xs font-black text-slate-800 font-mono">{fund.nav.toFixed(4)}</p><p className="text-[9px] font-bold text-emerald-500">NAV</p></div>
                                 </div>
                             ))}
-                            <button onClick={() => navigate('/investment')} className="w-full py-4 bg-slate-50 text-slate-400 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-emerald-50 hover:text-emerald-600 transition-all border border-transparent hover:border-emerald-100 shadow-sm active:scale-95">Marketplace</button>
+                            <button onClick={() => navigate('/investment')} className="w-full py-4 bg-slate-50 text-slate-400 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-emerald-50 hover:text-emerald-600 transition-all border border-transparent hover:border-amber-100 shadow-sm active:scale-95">Marketplace</button>
                         </div>
                     </div>
                 </div>
@@ -339,8 +360,7 @@ const Dashboard = () => {
                 </div>
             )}
 
-            {/* Other Modals (Transfer, Slip, Withdraw, Move, Create, QR) - คงเดิม */}
-            {/* ... โค้ดส่วน Modals ทั้งหมดที่ผมเคยให้ไปก่อนหน้านี้ ... */}
+            {/* 🧾 Modal Slip */}
             {showSlipModal && slipData && (
                 <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-sm">
                     <div className="w-full max-w-sm">
@@ -376,12 +396,15 @@ const Dashboard = () => {
                         <div className="mt-6 space-y-3">
                             <button onClick={handleSaveSlip} className="w-full py-4 bg-emerald-500 text-white rounded-2xl font-black text-sm shadow-lg hover:bg-emerald-600 transition-all flex items-center justify-center gap-2 active:scale-95">💾 Save to Gallery</button>
                             <div className="flex gap-2">
+                                <button onClick={handleAddFavorite} className="flex-1 py-4 bg-white border-2 border-slate-100 text-slate-400 rounded-2xl font-black text-xs uppercase hover:bg-slate-50 transition-all">+ Favorite</button>
                                 <button onClick={() => setShowSlipModal(false)} className="flex-1 py-4 bg-slate-900 text-white rounded-2xl font-black shadow-xl active:scale-95 transition-all">Done</button>
                             </div>
                         </div>
                     </div>
                 </div>
             )}
+
+            {/* Other Modals (QR, Transfer, Withdraw, Move, Create) */}
             {showQRModal && selectedAccForQR && (
                 <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md">
                     <div className="bg-white rounded-[2.5rem] p-8 w-full max-w-sm shadow-2xl text-center">
@@ -404,9 +427,17 @@ const Dashboard = () => {
             {showTransferModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md text-slate-800">
                     <div className="bg-white rounded-[2.5rem] p-8 w-full max-w-lg shadow-2xl">
-                        <div className="flex justify-between items-start mb-8 font-black">
-                            <h3 className="text-3xl">Transfer</h3>
-                            <button onClick={() => setShowTransferModal(false)} className="text-slate-400 hover:text-slate-600">✕</button>
+                        <div className="flex justify-between items-start mb-8 font-black"><h3 className="text-3xl">Transfer</h3><button onClick={() => setShowTransferModal(false)} className="text-slate-400 hover:text-slate-600">✕</button></div>
+                        <div className="mb-6 overflow-x-auto no-scrollbar">
+                            <label className="text-[10px] font-black uppercase text-slate-400 block mb-3 font-mono">Quick Favorites</label>
+                            <div className="flex gap-4 pb-2">
+                                {favorites.map(fav => (
+                                    <button key={fav.id} onClick={() => setDestAccountNumber(fav.accountNumber)} className="flex-shrink-0 flex flex-col items-center gap-2 group">
+                                        <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 font-black group-hover:bg-emerald-50 group-hover:text-emerald-600 transition-all border border-transparent group-hover:border-emerald-100">{fav.nickname.charAt(0)}</div>
+                                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-tighter">{fav.nickname}</span>
+                                    </button>
+                                ))}
+                            </div>
                         </div>
                         <div className="space-y-6">
                             <select value={sourceId} onChange={(e) => setSourceId(e.target.value)} className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-6 py-4 font-bold outline-none">
