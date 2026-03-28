@@ -1,9 +1,50 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import BankingLayout from '../components/BankingLayout';
 
 const Login = () => {
     const navigate = useNavigate();
+    
+    // 1. สร้าง State เก็บค่า Username, Password และ Error
+    const [username, setUsername] = useState('');
+    const [password, setPassword] = useState('');
+    const [errorMsg, setErrorMsg] = useState('');
+
+    // 2. ฟังก์ชันตอนกดปุ่ม Sign In
+    const handleLogin = async (e) => {
+        e.preventDefault(); // ป้องกันหน้าเว็บ Refresh
+        setErrorMsg(''); // ล้าง Error เก่า
+
+        try {
+            const response = await fetch('http://localhost:8080/api/auth/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password })
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                // ถ้า Login ผ่าน ให้เก็บข้อมูลลง LocalStorage เครื่องผู้ใช้
+                localStorage.setItem('user', JSON.stringify(data));
+                
+                // เช็ค Role ว่าเป็น Admin หรือ User ธรรมดา
+                if (data.role === 'ADMIN') {
+                    alert('ยินดีต้อนรับ Admin!');
+                    navigate('/admin-dashboard');
+                } else {
+                    alert('เข้าสู่ระบบสำเร็จ!');
+                    navigate('/dashboard');
+                }
+            } else {
+                // ถ้า Login ไม่ผ่าน โชว์ Error จาก Backend
+                setErrorMsg(data.error || 'Login failed');
+            }
+        } catch (error) {
+            setErrorMsg('ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้');
+        }
+    };
+
     return (
         <BankingLayout>
             <div className="w-full max-w-[480px] animate-in fade-in slide-in-from-right-10 duration-700">
@@ -26,11 +67,21 @@ const Login = () => {
                     </p>
                 </div>
 
-                <form className="flex flex-col gap-5">
+                {/* โชว์ Error สีแดง ถ้า Login ไม่ผ่าน */}
+                {errorMsg && (
+                    <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-600 rounded-lg text-sm font-medium">
+                        {errorMsg}
+                    </div>
+                )}
+
+                <form onSubmit={handleLogin} className="flex flex-col gap-5">
                     <div className="flex flex-col gap-2">
                         <label className="text-[10px] font-black uppercase tracking-[2px] text-slate-400 ml-1">Username</label>
                         <input
                             type="text"
+                            value={username}
+                            onChange={(e) => setUsername(e.target.value)}
+                            required
                             placeholder="Enter your username"
                             className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-6 py-4 focus:outline-none focus:border-emerald-500/30 focus:bg-white transition-all duration-300 text-slate-700 font-medium"
                         />
@@ -40,6 +91,9 @@ const Login = () => {
                         <label className="text-[10px] font-black uppercase tracking-[2px] text-slate-400 ml-1">Password</label>
                         <input
                             type="password"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            required
                             placeholder="••••••••"
                             className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-6 py-4 focus:outline-none focus:border-emerald-500/30 focus:bg-white transition-all duration-300 text-slate-700 font-medium"
                         />
@@ -62,7 +116,7 @@ const Login = () => {
                 <div className="mt-10 text-center">
                     <p className="text-slate-400 text-sm font-medium">
                         Don't have an account? {' '}
-                        <a href="#" className="text-emerald-700 font-bold hover:underline underline-offset-4">Create one now</a>
+                        <span onClick={() => navigate('/create-account')} className="text-emerald-700 font-bold hover:underline underline-offset-4 cursor-pointer">Create one now</span>
                     </p>
                 </div>
             </div>

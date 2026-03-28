@@ -8,7 +8,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
-import java.util.UUID;
 
 @Service
 public class AccountService {
@@ -25,14 +24,20 @@ public class AccountService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("ไม่พบผู้ใช้งานนี้ในระบบ"));
 
+        // เช็คว่า User โดนระงับการใช้งานอยู่หรือไม่ (ถ้าโดนแบนห้ามเปิดบัญชี)
+        if (!user.getStatus().equals("ACTIVE")) {
+            throw new RuntimeException("ผู้ใช้งานถูกระงับ ไม่สามารถเปิดบัญชีใหม่ได้");
+        }
+
         // 2. สร้างบัญชีใหม่
         Account newAccount = new Account();
         newAccount.setUser(user);
         newAccount.setAccountName(accountName); // เช่น "บัญชีหลัก" หรือ "เงินออม"
         newAccount.setBalance(BigDecimal.ZERO); // เริ่มต้นมีเงิน 0 บาท
+        newAccount.setStatus("ACTIVE"); // กำหนดสถานะกระเป๋าเป็นพร้อมใช้งาน
         
-        // สุ่มเลขบัญชี 10 หลัก (แบบง่ายๆ ไปก่อน)
-        String randomAccNum = String.valueOf((long) (Math.random() * 10000000000L));
+        // สุ่มเลขบัญชี 10 หลัก (String.format ช่วยเติมเลข 0 ข้างหน้าให้ถ้าสุ่มได้ไม่ถึง 10 หลัก)
+        String randomAccNum = String.format("%010d", (long) (Math.random() * 10000000000L));
         newAccount.setAccountNumber(randomAccNum);
 
         // 3. บันทึกลงฐานข้อมูล
