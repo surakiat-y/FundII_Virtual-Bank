@@ -9,6 +9,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 
 @Service
 public class TransactionService {
@@ -19,85 +20,75 @@ public class TransactionService {
     @Autowired
     private TransactionRepository transactionRepository;
 
-    // 1. ระบบฝากเงิน
-    @Transactional // ป้องกันเงินหายถ้าระบบล่มระหว่างทำรายการ
+    @Transactional
     public Transaction deposit(Long accountId, BigDecimal amount) {
-        Account account = accountRepository.findById(accountId)
-                .orElseThrow(() -> new RuntimeException("ไม่พบบัญชีนี้ในระบบ"));
-
-        // เพิ่มเงิน
+        Account account = accountRepository.findById(accountId).orElseThrow();
+        checkAccountStatus(account);
         account.setBalance(account.getBalance().add(amount));
         accountRepository.save(account);
 
-        // บันทึกประวัติ
         Transaction tx = new Transaction();
         tx.setTransactionType("DEPOSIT");
         tx.setAmount(amount);
-        
-        // --- แก้บั๊ก: ฐานข้อมูลบังคับห้าม sourceAccount ว่าง ---
-        tx.setSourceAccount(account); 
-        tx.setDestinationAccount(account); 
-        
+        tx.setSourceAccount(account);
+        tx.setDestinationAccount(account);
+        tx.setTransactionDate(LocalDateTime.now()); // 🔥 แก้เป็นชื่อใหม่แล้ว
+        tx.setStatus("SUCCESSFUL");
         return transactionRepository.save(tx);
     }
 
-    // 2. ระบบถอนเงิน
     @Transactional
     public Transaction withdraw(Long accountId, BigDecimal amount) {
-        Account account = accountRepository.findById(accountId)
-                .orElseThrow(() -> new RuntimeException("ไม่พบบัญชีนี้ในระบบ"));
+        Account account = accountRepository.findById(accountId).orElseThrow();
+        if ("SUSPENDED".equals(account.getUser().getStatus())) throw new RuntimeException("บัญชีถูกระงับธุรกรรม (SUSPENDED)");
+        checkAccountStatus(account);
+        if (account.getBalance().compareTo(amount) < 0) throw new RuntimeException("ยอดเงินไม่เพียงพอ");
 
-        // เช็คยอดเงินว่าพอไหม? (compareTo: ถ้าค่าน้อยกว่าจะคืนค่า -1)
-        if (account.getBalance().compareTo(amount) < 0) {
-            throw new RuntimeException("ยอดเงินในบัญชีไม่เพียงพอ!");
-        }
-
-        // หักเงิน
         account.setBalance(account.getBalance().subtract(amount));
         accountRepository.save(account);
 
-        // บันทึกประวัติ
         Transaction tx = new Transaction();
         tx.setTransactionType("WITHDRAW");
         tx.setAmount(amount);
-        tx.setSourceAccount(account); // ถอนออกจากบัญชีตัวเอง (ต้นทาง)
-
+        tx.setSourceAccount(account);
+        tx.setDestinationAccount(account);
+        tx.setTransactionDate(LocalDateTime.now()); // 🔥 แก้เป็นชื่อใหม่แล้ว
+        tx.setStatus("SUCCESSFUL");
         return transactionRepository.save(tx);
     }
 
-    // 3. ระบบโอนเงิน (Transfer)
     @Transactional
     public Transaction transfer(Long sourceId, Long destinationId, BigDecimal amount) {
-        // เช็คว่าไม่ได้โอนเข้าบัญชีตัวเอง
-        if (sourceId.equals(destinationId)) {
-            throw new RuntimeException("ไม่สามารถโอนเงินเข้าบัญชีตัวเองซ้ำได้");
-        }
+        Account source = accountRepository.findById(sourceId).orElseThrow();
+        Account dest = accountRepository.findById(destinationId).orElseThrow();
+        if ("SUSPENDED".equals(source.getUser().getStatus())) throw new RuntimeException("บัญชีถูกระงับธุรกรรม (SUSPENDED)");
+        checkAccountStatus(source);
+        if (source.getBalance().compareTo(amount) < 0) throw new RuntimeException("ยอดเงินไม่เพียงพอ");
 
-        Account sourceAccount = accountRepository.findById(sourceId)
-                .orElseThrow(() -> new RuntimeException("ไม่พบบัญชีต้นทาง"));
-        
-        Account destAccount = accountRepository.findById(destinationId)
-                .orElseThrow(() -> new RuntimeException("ไม่พบบัญชีปลายทาง"));
+        source.setBalance(source.getBalance().subtract(amount));
+        dest.setBalance(dest.getBalance().add(amount));
+        accountRepository.save(source);
+        accountRepository.save(dest);
 
-        // เช็คยอดเงินต้นทาง
-        if (sourceAccount.getBalance().compareTo(amount) < 0) {
-            throw new RuntimeException("ยอดเงินในบัญชีไม่เพียงพอสำหรับการโอน!");
-        }
-
-        // หักเงินต้นทาง และ เพิ่มเงินปลายทาง
-        sourceAccount.setBalance(sourceAccount.getBalance().subtract(amount));
-        destAccount.setBalance(destAccount.getBalance().add(amount));
-
-        accountRepository.save(sourceAccount);
-        accountRepository.save(destAccount);
-
-        // บันทึกประวัติการโอน
         Transaction tx = new Transaction();
         tx.setTransactionType("TRANSFER");
         tx.setAmount(amount);
-        tx.setSourceAccount(sourceAccount);
-        tx.setDestinationAccount(destAccount);
-
+        tx.setSourceAccount(source);
+        tx.setDestinationAccount(dest);
+        tx.setTransactionDate(LocalDateTime.now()); // 🔥 แก้เป็นชื่อใหม่แล้ว
+        tx.setStatus("SUCCESSFUL");
         return transactionRepository.save(tx);
+    }
+
+    // 🔥 เพิ่ม Method สำหรับ Move Money (ย้ายเงินตัวเอง) เพื่อไม่ให้หน้า Dashboard Error
+    @Transactional
+    public void transferMoney(Long sourceId, Long destId, BigDecimal amount) {
+        transfer(sourceId, destId, amount);
+    }
+
+    private void checkAccountStatus(Account account) {
+        if ("BANNED".equals(account.getStatus()) || "BANNED".equals(account.getUser().getStatus())) {
+            throw new RuntimeException("บัญชีถูกระงับการใช้งาน (BANNED)");
+        }
     }
 }

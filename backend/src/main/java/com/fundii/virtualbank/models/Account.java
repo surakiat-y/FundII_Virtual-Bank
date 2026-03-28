@@ -6,7 +6,7 @@ import java.math.BigDecimal;
 
 @Data
 @Entity
-@Table(name = "accounts") // สร้างตารางชื่อ accounts
+@Table(name = "accounts")
 public class Account {
 
     @Id
@@ -14,16 +14,17 @@ public class Account {
     private Long id;
 
     @Column(unique = true, nullable = false)
-    private String accountNumber; // เลขบัญชีธนาคาร (ห้ามซ้ำ)
+    private String accountNumber; 
 
-    private String accountName; // ชื่อบัญชี (เช่น "บัญชีหลัก", "เงินออม", "ค่าขนม")
+    private String accountName; 
 
     @Column(nullable = false)
-    private BigDecimal balance; // ยอดเงิน (ใช้ BigDecimal เพราะคำนวณเงินได้แม่นยำกว่า Double ครับ)
+    private BigDecimal balance = BigDecimal.ZERO; // เริ่มต้นที่ 0 เสมอ
 
-    // การเชื่อมความสัมพันธ์: บัญชีนี้เป็นของใคร?
-    @ManyToOne // Many Accounts to One User (1 คนมีได้หลายบัญชี)
-    @JoinColumn(name = "user_id", nullable = false) // สร้างคอลัมน์ user_id เพื่อเชื่อมกับตาราง users
+    @Column(nullable = false)
+    private String status = "ACTIVE"; // สถานะกระเป๋า: ACTIVE, SUSPENDED
+
+    @ManyToOne
+    @JoinColumn(name = "user_id", nullable = false)
     private User user;
-
 }

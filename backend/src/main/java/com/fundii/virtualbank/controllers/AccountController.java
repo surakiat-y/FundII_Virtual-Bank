@@ -12,6 +12,7 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api/accounts")
+@CrossOrigin("*")
 public class AccountController {
 
     @Autowired
@@ -37,5 +38,14 @@ public class AccountController {
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(e.getMessage());
         }
+    }
+
+    // ดึงข้อมูลบัญชีจากเลขบัญชี (เอาไว้ให้หน้าโอนเงินตรวจสอบชื่อผู้รับ)
+    @GetMapping("/search")
+    @CrossOrigin("*") // สำคัญมาก: ปลดล็อกให้ React ค้นหาชื่อบัญชีได้
+    public ResponseEntity<?> searchAccount(@RequestParam String accountNumber) {
+        return accountRepository.findByAccountNumber(accountNumber)
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
     }
 }

@@ -1,0 +1,14 @@
+{
+    "configurations": [
+        {
+            "type": "java",
+            "name": "Spring Boot-VirtualbankApplication<virtualbank>",
+            "request": "launch",
+            "cwd": "${workspaceFolder}",
+            "mainClass": "com.fundii.virtualbank.VirtualbankApplication",
+            "projectName": "virtualbank",
+            "args": "",
+            "envFile": "${workspaceFolder}/.env"
+        }
+    ]
+}
