@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import BankingLayout from '../components/BankingLayout';
+import WelcomeLayout from '../components/WelcomeLayout';
 
 const SignUp = () => {
     const navigate = useNavigate();
@@ -60,7 +60,7 @@ const SignUp = () => {
     };
 
     return (
-        <BankingLayout>
+        <WelcomeLayout>
             <div className="w-full max-w-[480px] animate-in fade-in slide-in-from-right-10 duration-700">
                 <div className="mb-8">
                     <button
@@ -170,7 +170,7 @@ const SignUp = () => {
                     </p>
                 </div>
             </div>
-        </BankingLayout>
+        </WelcomeLayout>
     );
 };
 

@@ -1,7 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 
-const BankingLayout = ({ children }) => {
+const WelcomeLayout = ({ children }) => {
     return (
         <div className="h-screen w-full flex overflow-hidden font-sans bg-white">
             {/* ─── Left Half: Hero Image ─── */}
@@ -31,7 +31,7 @@ const BankingLayout = ({ children }) => {
                                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                                 <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
                             </span>
-                            <span className="text-emerald-700 font-black text-[11px] uppercase tracking-widest">
+                            <span className="text-emerald-700 font-black text-[11px] uppercase tracking-[0.2em] font-display">
                                 Next-Gen Virtual Banking
                             </span>
                         </div>
@@ -45,17 +45,10 @@ const BankingLayout = ({ children }) => {
                     </div>
                 </div>
 
-                {/* Footer Navigation */}
-                <footer className="p-8 mt-auto flex justify-between items-center text-[10px] font-bold text-slate-300 uppercase tracking-widest">
-                    <span>© 2026 NEXT-GEN PROJECT. ALL RIGHTS RESERVED.</span>
-                    <div className="flex gap-6">
-                        <span className="hover:text-emerald-700 transition-colors cursor-pointer">Support</span>
-                        <span className="hover:text-emerald-700 transition-colors cursor-pointer">Privacy</span>
-                    </div>
-                </footer>
+
             </div>
         </div>
     );
 };
 
-export default BankingLayout;
+export default WelcomeLayout;

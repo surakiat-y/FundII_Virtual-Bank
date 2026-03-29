@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import NavbarAdmin from '../components/Navbar-Admin';
 
 const AdminDashboard = () => {
     const navigate = useNavigate();
@@ -35,7 +36,7 @@ const AdminDashboard = () => {
         const loggedInUser = localStorage.getItem('user');
         if (!loggedInUser) { navigate('/login'); return; }
         const userData = JSON.parse(loggedInUser);
-        if (userData.role !== 'ADMIN') { navigate('/dashboard'); return; }
+        if (userData.role !== 'ADMIN') { navigate('/portal'); return; }
         setAdmin(userData);
         fetchAllUsers();
         fetchAllFunds();
@@ -92,22 +93,12 @@ const AdminDashboard = () => {
     return (
         <div className="min-h-screen bg-slate-950 text-white font-sans selection:bg-emerald-500/30">
             {/* --- Navbar --- */}
-            <nav className="bg-slate-900/50 backdrop-blur-xl border-b border-white/5 px-8 py-4 flex justify-between items-center sticky top-0 z-40">
-                <div className="flex items-center gap-6">
-                    <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-400 to-teal-600 flex items-center justify-center font-black text-slate-900 shadow-lg shadow-emerald-500/20">A</div>
-                        <span className="font-bold tracking-tight">Admin Portal</span>
-                    </div>
-                    <div className="flex bg-slate-800/50 p-1 rounded-xl border border-white/5 ml-4 shadow-inner">
-                        <button onClick={() => setActiveTab('users')} className={`px-5 py-2 rounded-lg text-xs font-black transition-all ${activeTab === 'users' ? 'bg-emerald-500 text-slate-950 shadow-lg' : 'text-slate-400 hover:text-white'}`}>User Management</button>
-                        <button onClick={() => setActiveTab('funds')} className={`px-5 py-2 rounded-lg text-xs font-black transition-all ${activeTab === 'funds' ? 'bg-emerald-500 text-slate-950 shadow-lg' : 'text-slate-400 hover:text-white'}`}>Fund Management</button>
-                    </div>
-                </div>
-                <div className="flex items-center gap-6">
-                    <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Welcome, {admin.firstName}</span>
-                    <button onClick={() => { localStorage.removeItem('user'); navigate('/login'); }} className="text-xs font-black text-rose-500 hover:text-rose-400 transition-colors uppercase tracking-widest border border-rose-500/20 px-4 py-2 rounded-xl hover:bg-rose-500/5">Log Out</button>
-                </div>
-            </nav>
+            <NavbarAdmin 
+                admin={admin} 
+                activeTab={activeTab} 
+                setActiveTab={setActiveTab} 
+                onLogout={() => { localStorage.removeItem('user'); navigate('/login'); }} 
+            />
 
             <main className="max-w-7xl mx-auto p-8">
                 {activeTab === 'users' ? (

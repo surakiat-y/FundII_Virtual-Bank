@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import BankingLayout from '../components/BankingLayout';
+import WelcomeLayout from '../components/WelcomeLayout';
+import StatusNotification from '../components/StatusNotification';
+
 
 const Login = () => {
     const navigate = useNavigate();
@@ -9,6 +11,8 @@ const Login = () => {
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
     const [errorMsg, setErrorMsg] = useState('');
+    const [isBannedModalOpen, setIsBannedModalOpen] = useState(false);
+
 
     // 2. ฟังก์ชันตอนกดปุ่ม Sign In
     const handleLogin = async (e) => {
@@ -34,8 +38,11 @@ const Login = () => {
                     navigate('/admin-dashboard');
                 } else {
                     alert('เข้าสู่ระบบสำเร็จ!');
-                    navigate('/dashboard');
+                    navigate('/portal');
                 }
+            } else if (response.status === 403) {
+                // 🔥 จัดการกรณีบัญชีโดน BAN
+                setIsBannedModalOpen(true);
             } else {
                 // ถ้า Login ไม่ผ่าน โชว์ Error จาก Backend
                 setErrorMsg(data.error || 'Login failed');
@@ -46,7 +53,7 @@ const Login = () => {
     };
 
     return (
-        <BankingLayout>
+        <WelcomeLayout>
             <div className="w-full max-w-[480px] animate-in fade-in slide-in-from-right-10 duration-700">
                 <div className="mb-10">
                     <button
@@ -118,8 +125,14 @@ const Login = () => {
                     </p>
                 </div>
             </div>
-        </BankingLayout>
+
+            <StatusNotification 
+                isOpen={isBannedModalOpen} 
+                onClose={() => setIsBannedModalOpen(false)} 
+                status="BANNED" 
+            />
+        </WelcomeLayout>
     );
 };
 
-export default Login;
+export default Login;

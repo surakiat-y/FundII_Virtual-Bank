@@ -64,10 +64,10 @@ const Statement = () => {
         <div className="min-h-screen bg-slate-50 font-sans pb-20 text-slate-800">
             {/* Header */}
             <header className="p-6 flex justify-between items-center max-w-4xl mx-auto">
-                <button onClick={() => navigate('/dashboard')} className="text-emerald-600 font-black text-[10px] uppercase tracking-[0.2em] flex items-center gap-2 hover:bg-emerald-50 px-4 py-2 rounded-full transition-all">
+                <button onClick={() => navigate('/portal')} className="text-emerald-600 font-black text-[10px] uppercase tracking-[0.2em] flex items-center gap-2 hover:bg-emerald-50 px-4 py-2 rounded-full transition-all">
                     ← Back
                 </button>
-                <h1 className="text-lg font-black text-slate-800 uppercase tracking-widest">E-Statement</h1>
+                <h1 className="text-lg font-black text-slate-800 uppercase tracking-[0.2em] font-display">E-Statement</h1>
                 <div className="w-16"></div>
             </header>
 

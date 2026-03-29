@@ -32,7 +32,9 @@ public class AuthController {
         }
     }
 
+
     @PostMapping("/login")
+
     public ResponseEntity<?> login(@RequestBody User loginData) {
         Optional<User> userOpt = userRepository.findByUsername(loginData.getUsername());
 

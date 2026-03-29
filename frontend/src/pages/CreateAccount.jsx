@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { QRCodeCanvas } from 'qrcode.react';
 import html2canvas from 'html2canvas';
 
-const Dashboard = () => {
+const CreateAccount = () => {
     const navigate = useNavigate();
     const [user, setUser] = useState(null);
     const [accounts, setAccounts] = useState([]);
@@ -424,4 +424,4 @@ const Dashboard = () => {
     );
 };
 
-export default Dashboard;
+export default CreateAccount;

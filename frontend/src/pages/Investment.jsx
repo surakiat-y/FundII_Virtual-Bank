@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import StatusNotification from '../components/StatusNotification';
+
 
 const Investment = () => {
     const navigate = useNavigate();
@@ -12,6 +14,8 @@ const Investment = () => {
     const [selectedFund, setSelectedFund] = useState(null);
     const [buyAmount, setBuyAmount] = useState('');
     const [sourceId, setSourceId] = useState('');
+    const [isStatusModalOpen, setIsStatusModalOpen] = useState(false);
+
 
     // แยกฟังก์ชันดึงข้อมูลบัญชีออกมาเพื่อให้เรียกซ้ำได้หลังจากซื้อสำเร็จ
     const fetchAccounts = (userId) => {
@@ -38,6 +42,15 @@ const Investment = () => {
         const interval = setInterval(fetchFunds, 10000); 
         return () => clearInterval(interval);
     }, []);
+
+    const checkSuspension = () => {
+        if (user?.status?.toUpperCase() === 'SUSPENDED' || user?.status?.toUpperCase() === 'BANNED' || user?.status?.toUpperCase() === 'BAN') {
+            setIsStatusModalOpen(true);
+            return true;
+        }
+        return false;
+    };
+
 
     // 🔥 ฟังก์ชันยืนยันการซื้อแบบส่งไปหลังบ้านจริง
     const handleConfirmBuy = async () => {
@@ -83,10 +96,10 @@ const Investment = () => {
         <div className="min-h-screen bg-[#0f172a] text-white font-sans p-8">
             <header className="max-w-4xl mx-auto flex justify-between items-center mb-10">
                 <div>
-                    <h1 className="text-3xl font-black tracking-tight">Marketplace</h1>
+                    <h1 className="text-3xl font-black tracking-tight font-display">Marketplace</h1>
                     <p className="text-slate-400 text-sm">เลือกลงทุนในกองทุนรวมที่คุณเชื่อใจ</p>
                 </div>
-                <button onClick={() => navigate('/dashboard')} className="bg-slate-800 px-5 py-2 rounded-xl text-xs font-bold hover:bg-slate-700 transition-all">← Back</button>
+                <button onClick={() => navigate('/portal')} className="bg-slate-800 px-5 py-2 rounded-xl text-xs font-bold hover:bg-slate-700 transition-all">← Back</button>
             </header>
 
             <main className="max-w-4xl mx-auto space-y-4">
@@ -107,7 +120,7 @@ const Investment = () => {
                                 <p className="text-3xl font-mono font-black text-emerald-400 tracking-tighter">{fund.nav.toFixed(4)}</p>
                             </div>
                             <button 
-                                onClick={() => { setSelectedFund(fund); setShowBuyModal(true); }}
+                                onClick={() => checkSuspension() ? null : (setSelectedFund(fund), setShowBuyModal(true))}
                                 className="bg-white text-slate-900 px-8 py-4 rounded-2xl font-black text-sm uppercase tracking-widest hover:bg-emerald-400 transition-all active:scale-95"
                             >
                                 Invest
@@ -162,8 +175,19 @@ const Investment = () => {
                     </div>
                 </div>
             )}
+            <StatusNotification 
+                isOpen={isStatusModalOpen} 
+                onClose={() => {
+                    setIsStatusModalOpen(false);
+                    if (user?.status?.toUpperCase() === 'BANNED' || user?.status?.toUpperCase() === 'BAN') {
+                        localStorage.removeItem('user');
+                        navigate('/login');
+                    }
+                }} 
+                status={user?.status} 
+            />
         </div>
     );
 };
 
-export default Investment;
+export default Investment;

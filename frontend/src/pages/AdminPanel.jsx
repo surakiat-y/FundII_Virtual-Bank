@@ -36,7 +36,7 @@ const AdminPanel = () => {
             <div className="bg-white w-full max-w-md p-10 rounded-[2.5rem] shadow-2xl border border-slate-100">
                 <div className="flex justify-between items-center mb-8">
                     <h2 className="text-3xl font-black text-slate-800">Admin</h2>
-                    <button onClick={() => navigate('/dashboard')} className="text-slate-400 font-bold hover:text-slate-600 uppercase text-[10px] tracking-widest">Back</button>
+                    <button onClick={() => navigate('/portal')} className="text-slate-400 font-bold hover:text-slate-600 uppercase text-[10px] tracking-widest">Back</button>
                 </div>
                 
                 <p className="text-slate-400 text-xs mb-8">เพิ่มกองทุนใหม่เข้าสู่ระบบ Virtual Bank Marketplace</p>
