@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { QRCodeCanvas } from 'qrcode.react';
-import html2canvas from 'html2canvas';
+import { toPng } from 'html-to-image';
 import NavbarUser from '../components/Navbar-User';
 import StatusNotification from '../components/StatusNotification';
-
+import PinModal from '../components/PinModal';
 
 const Portal = () => {
     const navigate = useNavigate();
@@ -45,6 +45,10 @@ const Portal = () => {
     const [isProcessing, setIsProcessing] = useState(false);
     const [isStatusModalOpen, setIsStatusModalOpen] = useState(false);
 
+    // ─── PIN Security States ───
+    const [isPinModalOpen, setIsPinModalOpen] = useState(false);
+    const [pinMode, setPinMode] = useState('VERIFY'); // 'VERIFY' or 'SETUP'
+    const [pendingAction, setPendingAction] = useState(null);
 
     const fetchAccounts = (userId) => {
         fetch(`http://localhost:8080/api/accounts/user/${userId}`)
@@ -87,7 +91,33 @@ const Portal = () => {
         return () => clearInterval(interval);
     }, [navigate]);
 
-    // 🔥 ฟังก์ชันยืนยันการขายแบบระบุหน่วย
+    // 🔥 PIN Verification Wrapper
+    const requestPin = (action) => {
+        if (user.role === 'ADMIN') {
+            action();
+            return;
+        }
+
+        setPendingAction(() => action);
+        if (!user.hasPin) {
+            setPinMode('SETUP');
+        } else {
+            setPinMode('VERIFY');
+        }
+        setIsPinModalOpen(true);
+    };
+
+    const handlePinSuccess = () => {
+        if (pinMode === 'SETUP') {
+            const updatedUser = { ...user, hasPin: true };
+            setUser(updatedUser);
+            localStorage.setItem('user', JSON.stringify(updatedUser));
+            alert("Security PIN setup successful! You can now proceed.");
+        } else {
+            if (pendingAction) pendingAction();
+        }
+    };
+
     const handleConfirmSell = async () => {
         if (!sellDestId || !sellUnits || sellUnits <= 0) {
             alert("กรุณาเลือกกระเป๋าและใส่จำนวนหน่วยที่ถูกต้องโบร!");
@@ -124,7 +154,6 @@ const Portal = () => {
         }
     };
 
-    // (Code setDestAccountName, logout, saveSlip เหมือนเดิม)
     useEffect(() => {
         if (destAccountNumber.length === 10) {
             fetch(`http://localhost:8080/api/accounts/search?accountNumber=${destAccountNumber}`)
@@ -142,18 +171,20 @@ const Portal = () => {
 
     const handleLogout = () => { localStorage.removeItem('user'); navigate('/login'); };
     const handleSaveSlip = () => {
-        const originalSlip = document.getElementById('digital-slip');
-        if (!originalSlip) return;
-        const tempContainer = document.createElement('div');
-        tempContainer.style.position = 'absolute'; tempContainer.style.left = '-9999px'; tempContainer.style.top = '-9999px';
-        document.body.appendChild(tempContainer);
-        const clonedSlip = originalSlip.cloneNode(true);
-        clonedSlip.style.width = '350px'; clonedSlip.style.display = 'block';
-        tempContainer.appendChild(clonedSlip);
-        html2canvas(clonedSlip, { backgroundColor: "#ffffff", scale: 2, useCORS: true, logging: false }).then((canvas) => {
-            const link = document.createElement('a'); link.download = `slip-VB-${Date.now()}.png`; link.href = canvas.toDataURL('image/png'); link.click();
-            document.body.removeChild(tempContainer);
-        }).catch(err => { console.error("Save error:", err); document.body.removeChild(tempContainer); });
+        const slip = document.getElementById('digital-slip');
+        if (!slip) return;
+        
+        toPng(slip, { cacheBust: true, pixelRatio: 2, backgroundColor: '#ffffff' })
+            .then((dataUrl) => {
+                const link = document.createElement('a');
+                link.download = `slip-VB-${Date.now()}.png`;
+                link.href = dataUrl;
+                link.click();
+            })
+            .catch((err) => {
+                console.error('Oops, something went wrong!', err);
+                alert("Failed to save image. Please try again.");
+            });
     };
 
     const handleShowQR = (account) => { setQRValue(account.accountNumber); setSelectedAccForQR(account); setShowQRModal(true); };
@@ -177,13 +208,31 @@ const Portal = () => {
     const handleTransfer = async () => {
         if (!sourceId || !destId || !transferAmount) return;
         setIsProcessing(true);
-        const res = await fetch('http://localhost:8080/api/transactions/transfer', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sourceAccountId: sourceId, destinationAccountId: destId, amount: transferAmount })
-        });
-        const data = await res.json();
-        if (res.ok) { setSlipData({ ...data, date: new Date().toLocaleString('th-TH') }); setShowSlipModal(true); fetchAccounts(user.id); setShowTransferModal(false); }
-        setIsProcessing(false);
+        try {
+            const res = await fetch('http://localhost:8080/api/transactions/transfer', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ sourceAccountId: sourceId, destinationAccountId: destId, amount: transferAmount })
+            });
+            const data = await res.json();
+            if (res.ok) { 
+                setSlipData({ 
+                    ...data, 
+                    toName: destAccountName, // ✅ ใส่ชื่อผู้รับ
+                    date: new Date().toLocaleString('th-TH') 
+                }); 
+                setShowSlipModal(true); 
+                fetchAccounts(user.id); 
+                setShowTransferModal(false); 
+                setTransferAmount('');
+                setDestAccountNumber('');
+            } else {
+                alert(`❌ โอนไม่สำเร็จ: ${data.error}`);
+            }
+        } catch (error) {
+            alert("❌ ระบบขัดข้อง");
+        } finally {
+            setIsProcessing(false);
+        }
     };
 
     const handleWithdraw = async () => {
@@ -215,7 +264,6 @@ const Portal = () => {
         return false;
     };
 
-
     if (!user) return null;
     const totalBalance = accounts.reduce((sum, acc) => sum + acc.balance, 0);
 
@@ -235,7 +283,6 @@ const Portal = () => {
                     </div>
                 </div>
 
-
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
                     <div className="lg:col-span-2">
                         <div className="flex justify-between items-end mb-6 px-2">
@@ -243,7 +290,7 @@ const Portal = () => {
                             <button onClick={() => checkSuspension() ? null : setShowCreateModal(true)} className="text-emerald-600 font-bold uppercase text-[11px] tracking-widest hover:text-emerald-700">+ Add Pocket</button>
                         </div>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-12">
-                            {accounts.map((account, index) => {
+                            {accounts.map((account) => {
                                 const goal = Number(account.savingsGoal || account.savings_goal) || 0;
                                 const balance = Number(account.balance) || 0;
                                 const percentage = goal > 0 ? Math.min((balance / goal) * 100, 100) : 0;
@@ -269,7 +316,6 @@ const Portal = () => {
                             })}
                         </div>
 
-                        {/* 🔥 ส่วน My Assets พร้อมระบบ Sell แบบเลือกหน่วย */}
                         <div className="px-2">
                             <h2 className="text-2xl font-black text-slate-800 mb-6">My Assets 📈</h2>
                             <div className="grid grid-cols-1 gap-4">
@@ -306,7 +352,6 @@ const Portal = () => {
                         </div>
                     </div>
 
-                    {/* 📈 Market Panel */}
                     <div>
                         <div className="flex justify-between items-end mb-6 px-2"><h2 className="text-2xl font-black text-slate-800">Market</h2><span className="text-[10px] text-slate-400 font-bold uppercase animate-pulse">Live</span></div>
                         <div className="bg-white border border-slate-100 rounded-[2.5rem] p-6 shadow-sm space-y-6">
@@ -322,7 +367,7 @@ const Portal = () => {
                 </div>
             </main>
 
-            {/* 💰 Modal สำหรับขายกองทุน (ระบุหน่วย) */}
+            {/* Modals */}
             {showSellModal && selectedAsset && (
                 <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md text-slate-800">
                     <div className="bg-white rounded-[2.5rem] p-8 w-full max-w-md shadow-2xl">
@@ -338,86 +383,69 @@ const Portal = () => {
                             <div>
                                 <label className="text-[10px] font-black uppercase text-slate-400 mb-2 block font-mono">Units to Sell</label>
                                 <input type="number" max={selectedAsset.units} value={sellUnits} onChange={(e) => setSellUnits(e.target.value)} className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-6 py-4 font-black text-2xl outline-none" placeholder="0.0000" />
-                                <p className="mt-2 text-[10px] text-slate-400 font-bold italic">≈ Estimated Money: ฿{(parseFloat(sellUnits || 0) * (funds.find(f => f.id === selectedAsset.fundId)?.nav || 0)).toLocaleString()}</p>
                             </div>
                             <div className="flex gap-3 pt-4">
                                 <button onClick={() => setShowSellModal(false)} className="flex-1 py-4 font-bold text-slate-400 bg-slate-50 rounded-2xl transition-all">Cancel</button>
-                                <button onClick={handleConfirmSell} className="flex-1 py-4 font-bold text-white bg-rose-500 rounded-2xl shadow-lg shadow-rose-200 transition-all active:scale-95">Confirm Sell</button>
+                                <button onClick={() => requestPin(handleConfirmSell)} className="flex-1 py-4 font-bold text-white bg-rose-500 rounded-2xl shadow-lg shadow-rose-200 transition-all active:scale-95">Confirm Sell</button>
                             </div>
                         </div>
                     </div>
                 </div>
             )}
 
-            {/* Other Modals (Transfer, Slip, Withdraw, Move, Create, QR) - คงเดิม */}
-            {/* ... โค้ดส่วน Modals ทั้งหมดที่ผมเคยให้ไปก่อนหน้านี้ ... */}
             {showSlipModal && slipData && (
-                <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-sm">
+                <div className="fixed inset-0 z-[160] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-sm">
                     <div className="w-full max-w-sm">
-                        <div id="digital-slip" style={{ backgroundColor: '#ffffff', borderRadius: '40px', overflow: 'hidden', display: 'block', width: '100%', fontFamily: 'Arial, sans-serif' }}>
-                            <div style={{ backgroundColor: '#10b981', padding: '40px 20px', textAlign: 'center' }}>
-                                <div style={{ width: '64px', height: '64px', backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: '100px', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px', border: '4px solid rgba(255,255,255,0.3)' }}>
-                                    <span style={{ fontSize: '30px', fontWeight: 'bold', color: '#ffffff' }}>✓</span>
-                                </div>
-                                <h3 style={{ margin: 0, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '2px', fontSize: '18px', color: '#ffffff' }}>Transfer Success</h3>
-                                <p style={{ margin: '8px 0 0', fontSize: '10px', opacity: 0.8, fontFamily: 'monospace', color: '#ffffff' }}>{slipData.date}</p>
+                        <div id="digital-slip" className="bg-white rounded-[40px] overflow-hidden w-full font-sans shadow-2xl">
+                            <div className="bg-emerald-500 p-10 text-center">
+                                <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-4 border-4 border-white/30 text-white font-bold text-3xl">✓</div>
+                                <h3 className="text-white font-black uppercase tracking-widest text-lg m-0">Transfer Success</h3>
+                                <p className="text-white/80 text-[10px] font-mono mt-2 m-0">{slipData.date}</p>
                             </div>
-                            <div style={{ padding: '32px', backgroundColor: '#ffffff' }}>
-                                <div style={{ textAlign: 'center', paddingBottom: '24px', borderBottom: '1px solid #f1f5f9', marginBottom: '24px' }}>
-                                    <p style={{ margin: 0, color: '#94a3b8', fontSize: '10px', fontWeight: 900, textTransform: 'uppercase' }}>Amount</p>
-                                    <p style={{ margin: '8px 0 0', fontSize: '36px', fontWeight: 900, color: '#0f172a' }}>฿{Number(slipData.amount).toLocaleString(undefined, {minimumFractionDigits: 2})}</p>
+                            <div className="p-8 bg-white">
+                                <div className="text-center pb-6 border-b border-slate-100 mb-6">
+                                    <p className="text-slate-400 text-[10px] font-black uppercase m-0">Amount</p>
+                                    <p className="text-4xl font-black text-slate-900 mt-2 m-0">฿{Number(slipData.amount).toLocaleString(undefined, {minimumFractionDigits: 2})}</p>
                                 </div>
-                                <div style={{ textAlign: 'left' }}>
-                                    <div style={{ marginBottom: '16px' }}>
-                                        <p style={{ margin: 0, color: '#cbd5e1', fontSize: '10px', fontWeight: 900, textTransform: 'uppercase' }}>From</p>
-                                        <p style={{ margin: 0, fontSize: '14px', fontWeight: 900, color: '#1e293b' }}>{slipData.fromName || user.firstName + " " + user.lastName}</p>
+                                <div className="space-y-4">
+                                    <div>
+                                        <p className="text-slate-300 text-[10px] font-black uppercase m-0">From</p>
+                                        <p className="text-sm font-black text-slate-700 m-0">{slipData.fromName || user.firstName + " " + user.lastName}</p>
                                     </div>
-                                    <div style={{ marginBottom: '16px' }}>
-                                        <p style={{ margin: 0, color: '#cbd5e1', fontSize: '10px', fontWeight: 900, textTransform: 'uppercase' }}>To</p>
-                                        <p style={{ margin: 0, fontSize: '14px', fontWeight: 900, color: '#1e293b' }}>{slipData.toName}</p>
+                                    <div>
+                                        <p className="text-slate-300 text-[10px] font-black uppercase m-0">To</p>
+                                        <p className="text-sm font-black text-slate-700 m-0">{slipData.toName}</p>
                                     </div>
                                 </div>
-                                <div style={{ marginTop: '24px', paddingTop: '16px', borderTop: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                    <span style={{ fontSize: '8px', color: '#94a3b8', fontFamily: 'monospace' }}>Ref ID: #VB-{slipData.transactionId}</span>
-                                    <span style={{ fontSize: '10px', color: '#10b981', fontWeight: 900 }}>VIRTUAL BANK</span>
+                                <div className="mt-6 pt-4 border-t border-slate-100 flex justify-between items-center text-slate-400">
+                                    <span className="text-[8px] font-mono uppercase tracking-tighter">Ref ID: #VB-{slipData.transactionId}</span>
+                                    <span className="text-[10px] font-black text-emerald-500 uppercase">Virtual Bank</span>
                                 </div>
                             </div>
                         </div>
                         <div className="mt-6 space-y-3">
-                            <button onClick={handleSaveSlip} className="w-full py-4 bg-emerald-500 text-white rounded-2xl font-black text-sm shadow-lg hover:bg-emerald-600 transition-all flex items-center justify-center gap-2 active:scale-95">💾 Save to Gallery</button>
-                            <div className="flex gap-2">
-                                <button onClick={() => setShowSlipModal(false)} className="flex-1 py-4 bg-slate-900 text-white rounded-2xl font-black shadow-xl active:scale-95 transition-all">Done</button>
-                            </div>
+                            <button onClick={handleSaveSlip} className="w-full py-4 bg-emerald-500 text-white rounded-2xl font-black text-xs shadow-lg active:scale-95 transition-all uppercase tracking-widest">Save to Gallery</button>
+                            <button onClick={() => setShowSlipModal(false)} className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black shadow-xl active:scale-95 transition-all uppercase text-xs tracking-widest">Done</button>
                         </div>
                     </div>
                 </div>
             )}
+
             {showQRModal && selectedAccForQR && (
-                <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md">
+                <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md">
                     <div className="bg-white rounded-[2.5rem] p-8 w-full max-w-sm shadow-2xl text-center">
-                        <div className="flex justify-between items-center mb-8">
-                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">My QR Code</span>
-                            <button onClick={() => setShowQRModal(false)} className="text-slate-300 hover:text-slate-500">✕</button>
-                        </div>
-                        <div className="bg-slate-50 p-6 rounded-[2rem] inline-block mb-6 border-4 border-white shadow-inner">
-                            <QRCodeCanvas value={qrValue} size={200} level={"H"} fgColor="#0f172a" includeMargin={true} />
-                        </div>
-                        <div className="mb-8">
-                            <h3 className="text-xl font-black text-slate-800">{user.firstName} {user.lastName}</h3>
-                            <p className="text-slate-400 font-mono text-sm mt-1">{selectedAccForQR.accountName}</p>
-                            <p className="bg-emerald-50 text-emerald-600 font-mono font-bold py-2 px-4 rounded-xl inline-block mt-4 tracking-tighter">{selectedAccForQR.accountNumber}</p>
-                        </div>
+                        <div className="flex justify-between items-center mb-8"><span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">My QR Code</span><button onClick={() => setShowQRModal(false)} className="text-slate-300 hover:text-slate-500">✕</button></div>
+                        <div className="bg-slate-50 p-6 rounded-[2rem] inline-block mb-6 border-4 border-white shadow-inner"><QRCodeCanvas value={qrValue} size={200} level={"H"} fgColor="#0f172a" includeMargin={true} /></div>
+                        <div className="mb-8"><h3 className="text-xl font-black text-slate-800">{user.firstName} {user.lastName}</h3><p className="text-slate-400 font-mono text-sm mt-1">{selectedAccForQR.accountName}</p><p className="bg-emerald-50 text-emerald-600 font-mono font-bold py-2 px-4 rounded-xl inline-block mt-4 tracking-tighter">{selectedAccForQR.accountNumber}</p></div>
                         <button onClick={() => setShowQRModal(false)} className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl active:scale-95 transition-all">Done</button>
                     </div>
                 </div>
             )}
+
             {showTransferModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md text-slate-800">
+                <div className="fixed inset-0 z-[140] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md text-slate-800">
                     <div className="bg-white rounded-[2.5rem] p-8 w-full max-w-lg shadow-2xl">
-                        <div className="flex justify-between items-start mb-8 font-black">
-                            <h3 className="text-3xl">Transfer</h3>
-                            <button onClick={() => setShowTransferModal(false)} className="text-slate-400 hover:text-slate-600">✕</button>
-                        </div>
+                        <div className="flex justify-between items-start mb-8 font-black"><h3 className="text-3xl">Transfer</h3><button onClick={() => setShowTransferModal(false)} className="text-slate-400 hover:text-slate-600">✕</button></div>
                         <div className="space-y-6">
                             <select value={sourceId} onChange={(e) => setSourceId(e.target.value)} className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-6 py-4 font-bold outline-none">
                                 <option value="">Select source pocket</option>
@@ -426,31 +454,33 @@ const Portal = () => {
                             <input type="text" placeholder="Account Number" maxLength="10" value={destAccountNumber} onChange={(e) => setDestAccountNumber(e.target.value)} className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-6 py-4 font-bold outline-none" />
                             {destAccountName && <p className="text-xs font-bold text-emerald-600 px-2 italic">{destAccountName}</p>}
                             <input type="number" placeholder="Amount" value={transferAmount} onChange={(e) => setTransferAmount(e.target.value)} className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-6 py-4 font-black text-2xl outline-none" />
-                            <button onClick={handleTransfer} disabled={isProcessing || !destId} className="w-full py-5 rounded-2xl font-black text-white bg-[#065f46] shadow-xl active:scale-95 transition-all">Confirm Transfer</button>
+                            <button onClick={() => requestPin(handleTransfer)} disabled={isProcessing || !destId} className="w-full py-5 rounded-2xl font-black text-white bg-[#065f46] shadow-xl active:scale-95 transition-all">Confirm Transfer</button>
                         </div>
                     </div>
                 </div>
             )}
+
             {showWithdrawModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md text-slate-800">
-                    <div className="bg-white rounded-[2.5rem] p-8 w-full max-w-md shadow-2xl">
-                        <h3 className="text-3xl font-black mb-8 tracking-tight">Withdraw</h3>
+                <div className="fixed inset-0 z-[130] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md text-slate-800">
+                    <div className="bg-white rounded-[2.5rem] p-8 w-full max-w-md shadow-2xl tracking-tight">
+                        <h3 className="text-3xl font-black mb-8">Withdraw</h3>
                         <div className="space-y-6">
                             <select value={withdrawAccountId} onChange={(e) => setWithdrawAccountId(e.target.value)} className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-6 py-4 font-bold outline-none">
                                 <option value="">Select pocket</option>
                                 {accounts.map(acc => <option key={acc.id} value={acc.id}>{acc.accountName} (฿{acc.balance.toLocaleString()})</option>)}
                             </select>
                             <input type="number" placeholder="Amount" value={withdrawAmount} onChange={(e) => setWithdrawAmount(e.target.value)} className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-6 py-4 font-black text-2xl outline-none" />
-                            <button onClick={handleWithdraw} disabled={isProcessing} className="w-full py-5 rounded-2xl font-black text-white bg-[#065f46] shadow-xl active:scale-95 transition-all">Confirm Withdrawal</button>
+                            <button onClick={() => requestPin(handleWithdraw)} disabled={isProcessing} className="w-full py-5 rounded-2xl font-black text-white bg-[#065f46] shadow-xl active:scale-95 transition-all">Confirm Withdrawal</button>
                             <button onClick={() => setShowWithdrawModal(false)} className="w-full text-slate-400 font-bold uppercase text-[10px] tracking-widest mt-2 hover:text-slate-600 transition-colors">Cancel</button>
                         </div>
                     </div>
                 </div>
             )}
+
             {showMoveModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md text-slate-800">
+                <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md text-slate-800">
                     <div className="bg-white rounded-[2.5rem] p-8 w-full max-w-md shadow-2xl">
-                        <h3 className="text-2xl font-black mb-1 tracking-tight">Move Money</h3>
+                        <h3 className="text-2xl font-black mb-1 tracking-tight font-display">Move Money</h3>
                         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-8">From: {moveSourceAcc?.accountName}</p>
                         <div className="space-y-6">
                             <select value={moveDestId} onChange={(e) => setMoveDestId(e.target.value)} className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-6 py-4 font-bold outline-none">
@@ -464,8 +494,9 @@ const Portal = () => {
                     </div>
                 </div>
             )}
+
             {showCreateModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm text-slate-800">
+                <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm text-slate-800">
                     <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl">
                         <h3 className="text-2xl font-black mb-6 tracking-tight">New Pocket</h3>
                         <div className="space-y-4">
@@ -479,6 +510,7 @@ const Portal = () => {
                     </div>
                 </div>
             )}
+
             <StatusNotification 
                 isOpen={isStatusModalOpen} 
                 onClose={() => {
@@ -489,8 +521,16 @@ const Portal = () => {
                 }} 
                 status={user?.status} 
             />
+
+            <PinModal 
+                isOpen={isPinModalOpen}
+                onClose={() => setIsPinModalOpen(false)}
+                onSuccess={handlePinSuccess}
+                mode={pinMode}
+                userId={user.id}
+            />
         </div>
     );
 };
 
-export default Portal;
+export default Portal;

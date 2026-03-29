@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import StatusNotification from '../components/StatusNotification';
-
+import PinModal from '../components/PinModal';
 
 const Investment = () => {
     const navigate = useNavigate();
@@ -16,6 +16,10 @@ const Investment = () => {
     const [sourceId, setSourceId] = useState('');
     const [isStatusModalOpen, setIsStatusModalOpen] = useState(false);
 
+    // ─── PIN Security States ───
+    const [isPinModalOpen, setIsPinModalOpen] = useState(false);
+    const [pinMode, setPinMode] = useState('VERIFY'); // 'VERIFY' or 'SETUP'
+    const [pendingAction, setPendingAction] = useState(null);
 
     // แยกฟังก์ชันดึงข้อมูลบัญชีออกมาเพื่อให้เรียกซ้ำได้หลังจากซื้อสำเร็จ
     const fetchAccounts = (userId) => {
@@ -51,6 +55,32 @@ const Investment = () => {
         return false;
     };
 
+    // 🔥 PIN Verification Wrapper
+    const requestPin = (action) => {
+        if (user.role === 'ADMIN') {
+            action();
+            return;
+        }
+
+        setPendingAction(() => action);
+        if (!user.hasPin) {
+            setPinMode('SETUP');
+        } else {
+            setPinMode('VERIFY');
+        }
+        setIsPinModalOpen(true);
+    };
+
+    const handlePinSuccess = () => {
+        if (pinMode === 'SETUP') {
+            const updatedUser = { ...user, hasPin: true };
+            setUser(updatedUser);
+            localStorage.setItem('user', JSON.stringify(updatedUser));
+            alert("Security PIN setup successful! Now press Confirm again to buy.");
+        } else {
+            if (pendingAction) pendingAction();
+        }
+    };
 
     // 🔥 ฟังก์ชันยืนยันการซื้อแบบส่งไปหลังบ้านจริง
     const handleConfirmBuy = async () => {
@@ -169,7 +199,7 @@ const Investment = () => {
 
                             <div className="flex gap-4 pt-4">
                                 <button onClick={() => setShowBuyModal(false)} className="flex-1 py-4 font-bold text-slate-400">Cancel</button>
-                                <button onClick={handleConfirmBuy} className="flex-1 py-4 bg-emerald-500 text-slate-950 font-black rounded-2xl shadow-lg shadow-emerald-500/20">Confirm</button>
+                                <button onClick={() => requestPin(handleConfirmBuy)} className="flex-1 py-4 bg-emerald-500 text-slate-950 font-black rounded-2xl shadow-lg shadow-emerald-500/20">Confirm</button>
                             </div>
                         </div>
                     </div>
@@ -186,8 +216,16 @@ const Investment = () => {
                 }} 
                 status={user?.status} 
             />
+
+            <PinModal 
+                isOpen={isPinModalOpen}
+                onClose={() => setIsPinModalOpen(false)}
+                onSuccess={handlePinSuccess}
+                mode={pinMode}
+                userId={user?.id}
+            />
         </div>
     );
 };
 
-export default Investment;
+export default Investment;

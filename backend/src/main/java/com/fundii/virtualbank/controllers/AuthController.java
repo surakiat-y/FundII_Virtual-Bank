@@ -25,8 +25,11 @@ public class AuthController {
     @PostMapping("/register")
     public ResponseEntity<?> register(@RequestBody User user) {
         try {
-            User newUser = userService.registerUser(user);
-            return ResponseEntity.ok(Map.of("message", "สมัครสมาชิกสำเร็จ!"));
+            Map<String, Object> result = userService.registerUser(user);
+            return ResponseEntity.ok(Map.of(
+                "message", "สมัครสมาชิกสำเร็จ!",
+                "accountNumber", result.get("accountNumber")
+            ));
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
@@ -53,6 +56,7 @@ public class AuthController {
             safeUserData.put("lastName", user.getLastName());
             safeUserData.put("role", user.getRole());
             safeUserData.put("status", user.getStatus());
+            safeUserData.put("hasPin", user.getPin() != null && !user.getPin().isEmpty());
 
             return ResponseEntity.ok(safeUserData);
         } else {

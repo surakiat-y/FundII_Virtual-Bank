@@ -27,4 +27,6 @@ public class User {
 
     @Column(nullable = false)
     private String status = "ACTIVE"; // สถานะบัญชี: ACTIVE, SUSPENDED, BANNED
+
+    private String pin; // รหัส PIN 4 หลัก ยืนยันธุรกรรม
 }

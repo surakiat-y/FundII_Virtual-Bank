@@ -87,7 +87,7 @@ const Login = () => {
                         <input
                             type="text"
                             value={username}
-                             onChange={(e) => setUsername(e.target.value)}
+                             onChange={(e) => setUsername(e.target.value.replace(/[^\x00-\x7F]/g, ""))}
                             required
                             className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-6 py-4 focus:outline-none focus:border-emerald-500/30 focus:bg-white transition-all duration-300 text-slate-700 font-medium"
                         />
@@ -98,7 +98,7 @@ const Login = () => {
                         <input
                             type="password"
                             value={password}
-                            onChange={(e) => setPassword(e.target.value)}
+                            onChange={(e) => setPassword(e.target.value.replace(/[^\x00-\x7F]/g, ""))}
                             required
                             className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-6 py-4 focus:outline-none focus:border-emerald-500/30 focus:bg-white transition-all duration-300 text-slate-700 font-medium"
                         />
