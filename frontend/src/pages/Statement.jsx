@@ -1,8 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useOutletContext } from 'react-router-dom';
+import LoadingGuard from '../components/LoadingGuard';
+import NavbarUser from '../components/Navbar-User';
+import api from '../utils/axios';
 
 const Statement = () => {
     const navigate = useNavigate();
+    const { user, setUser, handleLogout } = useOutletContext();
     const [accounts, setAccounts] = useState([]);
     const [selectedAccountId, setSelectedAccountId] = useState('');
     const [transactions, setTransactions] = useState([]);
@@ -10,30 +14,34 @@ const Statement = () => {
     // ─── States สำหรับการดูสลิป ───
     const [showSlipModal, setShowSlipModal] = useState(false);
     const [slipData, setSlipData] = useState(null);
+    const [isStatusModalOpen, setIsStatusModalOpen] = useState(false);
 
     useEffect(() => {
         const loggedInUser = localStorage.getItem('user');
         if (!loggedInUser) { navigate('/login'); return; }
-        const user = JSON.parse(loggedInUser);
+        const userData = JSON.parse(loggedInUser);
+        setUser(userData);
         
-        fetch(`http://localhost:8080/api/accounts/user/${user.id}`)
-            .then(res => res.json())
-            .then(data => {
+        api.get(`/accounts/user/${userData.id}`)
+            .then(res => {
+                const data = res.data;
                 setAccounts(data);
                 if (data.length > 0) {
                     setSelectedAccountId(data[0].id);
                     fetchTransactions(data[0].id);
                 }
-            });
+            })
+            .catch(err => console.error(err));
     }, [navigate]);
 
     const fetchTransactions = (accountId) => {
-        fetch(`http://localhost:8080/api/transactions/account/${accountId}`)
-            .then(res => res.json())
-            .then(data => {
+        api.get(`/transactions/account/${accountId}`)
+            .then(res => {
+                const data = res.data;
                 const sorted = data.sort((a, b) => new Date(b.transactionDate) - new Date(a.transactionDate));
                 setTransactions(sorted);
-            });
+            })
+            .catch(err => console.error(err));
     };
 
     const handleAccountChange = (e) => {
@@ -60,85 +68,80 @@ const Statement = () => {
         setShowSlipModal(true);
     };
 
+    // No blocking loader here as per user request (Instant Access from Portal)
+
     return (
         <div className="min-h-screen bg-slate-50 font-sans pb-20 text-slate-800">
-            {/* Header */}
-            <header className="p-6 flex justify-between items-center max-w-4xl mx-auto">
-                <button onClick={() => navigate('/portal')} className="text-emerald-600 font-black text-[10px] uppercase tracking-[0.2em] flex items-center gap-2 hover:bg-emerald-50 px-4 py-2 rounded-full transition-all">
-                    ← Back
-                </button>
-                <h1 className="text-lg font-black text-slate-800 uppercase tracking-[0.2em] font-display">E-Statement</h1>
-                <div className="w-16"></div>
-            </header>
-
-            <main className="max-w-4xl mx-auto p-6">
-                <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-12 gap-6">
-                    <div>
-                        <h2 className="text-5xl font-black text-slate-900 mb-3 tracking-tighter">History</h2>
-                        <p className="text-slate-400 text-sm font-medium">Review your latest financial activities</p>
-                    </div>
-                    <div className="w-full md:w-auto">
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] block mb-3">Filter by Account</label>
-                        <select 
-                            value={selectedAccountId} 
-                            onChange={handleAccountChange}
-                            className="w-full md:w-64 bg-white border-2 border-slate-100 rounded-[1.25rem] px-6 py-4 font-bold text-slate-700 outline-none shadow-sm focus:border-emerald-500/20 transition-all cursor-pointer"
-                        >
-                            {accounts.map(acc => (
-                                <option key={acc.id} value={acc.id}>{acc.accountName} (****{acc.accountNumber.slice(-4)})</option>
-                            ))}
-                        </select>
-                    </div>
-                </div>
-
-                {/* List Items */}
-                <div className="space-y-4">
-                    {transactions.length === 0 ? (
-                        <div className="text-center py-24 bg-white rounded-[2.5rem] border-2 border-dashed border-slate-100 text-slate-300 font-bold uppercase tracking-widest text-xs">
-                            No movements in this pocket.
+            <div className="animate-slideInRight">
+                <main className="max-w-4xl mx-auto p-6">
+                    <div className="flex flex-col md:flex-row justify-between items-center mb-12 gap-6">
+                        <div className="flex items-center gap-4">
+                            <h2 className="text-4xl font-black text-slate-900 tracking-tighter">History</h2>
+                            <span className="text-[10px] font-black bg-slate-100 text-slate-400 px-3 py-1 rounded-full border border-slate-200/50">{transactions.length} Total</span>
                         </div>
-                    ) : (
-                        transactions.map(tx => {
-                            // 🔥 Logic แยกสีเงินเข้า-เงินออก
-                            // ถ้าเป็นบัญชีเราเป็นผู้ส่ง (source) หรือเป็นประเภท WITHDRAW = สีแดง (เงินออก)
-                            const isExpense = tx.sourceAccount?.id === Number(selectedAccountId) || tx.transactionType === 'WITHDRAW' || tx.transactionType === 'MOVE_MONEY_OUT';
-                            const isIncome = tx.destinationAccount?.id === Number(selectedAccountId) || tx.transactionType === 'DEPOSIT';
+                        <div className="w-full md:w-auto">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] block mb-3">Filter by Account</label>
+                            <select 
+                                value={selectedAccountId} 
+                                onChange={handleAccountChange}
+                                className="w-full md:w-64 bg-white border-2 border-slate-100 rounded-[1.25rem] px-6 py-4 font-bold text-slate-700 outline-none shadow-sm focus:border-emerald-500/20 transition-all cursor-pointer"
+                            >
+                                {accounts.map(acc => (
+                                    <option key={acc.id} value={acc.id}>{acc.accountName} (****{acc.accountNumber.slice(-4)})</option>
+                                ))}
+                            </select>
+                        </div>
+                    </div>
 
-                            return (
-                                <div 
-                                    key={tx.id} 
-                                    onClick={() => handleRowClick(tx)}
-                                    className={`bg-white p-6 rounded-[2.2rem] border border-slate-100 shadow-sm flex items-center justify-between transition-all active:scale-[0.97] hover:shadow-md ${tx.transactionType === 'TRANSFER' ? 'cursor-pointer hover:border-emerald-100' : ''}`}
-                                >
-                                    <div className="flex items-center gap-5">
-                                        <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-lg font-black ${
-                                            isExpense ? 'bg-rose-50 text-rose-500' : 'bg-emerald-50 text-emerald-500'
-                                        }`}>
-                                            {tx.transactionType === 'TRANSFER' ? 'T' : tx.transactionType === 'DEPOSIT' ? 'D' : 'W'}
+                    {/* List Items */}
+                    <div className="space-y-4">
+                        {transactions.length === 0 ? (
+                            <div className="text-center py-24 bg-white rounded-[2.5rem] border-2 border-dashed border-slate-100 text-slate-300 font-bold uppercase tracking-widest text-xs">
+                                No movements in this pocket.
+                            </div>
+                        ) : (
+                            transactions.map(tx => {
+                                // 🔥 Logic แยกสีเงินเข้า-เงินออก
+                                // ถ้าเป็นบัญชีเราเป็นผู้ส่ง (source) หรือเป็นประเภท WITHDRAW = สีแดง (เงินออก)
+                                const isExpense = tx.sourceAccount?.id === Number(selectedAccountId) || tx.transactionType === 'WITHDRAW' || tx.transactionType === 'MOVE_MONEY_OUT';
+                                const isIncome = tx.destinationAccount?.id === Number(selectedAccountId) || tx.transactionType === 'DEPOSIT';
+
+                                return (
+                                    <div 
+                                        key={tx.id} 
+                                        onClick={() => handleRowClick(tx)}
+                                        className={`bg-white p-6 rounded-[2.2rem] border border-slate-100 shadow-sm flex items-center justify-between transition-all active:scale-[0.97] hover:shadow-md ${tx.transactionType === 'TRANSFER' ? 'cursor-pointer hover:border-emerald-100' : ''}`}
+                                    >
+                                        <div className="flex items-center gap-5">
+                                            <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-lg font-black ${
+                                                isExpense ? 'bg-rose-50 text-rose-500' : 'bg-emerald-50 text-emerald-500'
+                                            }`}>
+                                                {tx.transactionType === 'TRANSFER' ? 'T' : tx.transactionType === 'DEPOSIT' ? 'D' : 'W'}
+                                            </div>
+                                            <div>
+                                                <p className="font-black text-slate-800 text-sm uppercase tracking-tight">
+                                                    {tx.transactionType === 'TRANSFER' 
+                                                        ? (isExpense ? `To ${tx.destinationAccount.user.firstName}` : `From ${tx.sourceAccount.user.firstName}`) 
+                                                        : tx.transactionType.replace(/_/g, ' ')}
+                                                </p>
+                                                <p className="text-slate-400 text-[10px] font-bold mt-0.5">
+                                                    {new Date(tx.transactionDate).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' })}
+                                                </p>
+                                            </div>
                                         </div>
-                                        <div>
-                                            <p className="font-black text-slate-800 text-sm uppercase tracking-tight">
-                                                {tx.transactionType === 'TRANSFER' 
-                                                    ? (isExpense ? `To ${tx.destinationAccount.user.firstName}` : `From ${tx.sourceAccount.user.firstName}`) 
-                                                    : tx.transactionType.replace(/_/g, ' ')}
+                                        <div className="text-right">
+                                            <p className={`text-xl font-black tracking-tight ${isExpense ? 'text-rose-500' : 'text-emerald-500'}`}>
+                                                {isExpense ? '-' : '+'} ฿{tx.amount.toLocaleString(undefined, {minimumFractionDigits: 2})}
                                             </p>
-                                            <p className="text-slate-400 text-[10px] font-bold mt-0.5">
-                                                {new Date(tx.transactionDate).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' })}
-                                            </p>
+                                            <p className="text-[9px] font-black text-slate-300 uppercase tracking-widest mt-1">SUCCESS</p>
                                         </div>
                                     </div>
-                                    <div className="text-right">
-                                        <p className={`text-xl font-black tracking-tight ${isExpense ? 'text-rose-500' : 'text-emerald-500'}`}>
-                                            {isExpense ? '-' : '+'} ฿{tx.amount.toLocaleString(undefined, {minimumFractionDigits: 2})}
-                                        </p>
-                                        <p className="text-[9px] font-black text-slate-300 uppercase tracking-widest mt-1">SUCCESS</p>
-                                    </div>
-                                </div>
-                            );
-                        })
-                    )}
-                </div>
-            </main>
+                                );
+                            })
+                        )}
+                    </div>
+                </main>
+            </div>
 
             {/* ─── Digital Slip Modal ─── */}
             {showSlipModal && slipData && (
@@ -179,7 +182,7 @@ const Statement = () => {
                                     <div>
                                         <p className="text-[9px] font-black text-emerald-300 uppercase tracking-widest mb-1">To</p>
                                         <p className="text-sm font-black text-slate-800 tracking-tight">{slipData.toName}</p>
-                                        <p className="text-[10px] text-slate-400 font-mono">****{slipData.toAccount.slice(-4)} ({slipData.toPocket})</p>
+                                        <p className="text-[10px] text-slate-400 font-mono">****{slipData.toAccount.slice(-4)}</p>
                                     </div>
                                 </div>
                             </div>

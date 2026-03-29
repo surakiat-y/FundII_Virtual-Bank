@@ -1,14 +1,14 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useOutletContext } from 'react-router-dom';
 import { QRCodeCanvas } from 'qrcode.react';
 import { toPng } from 'html-to-image';
-import NavbarUser from '../components/Navbar-User';
-import StatusNotification from '../components/StatusNotification';
+import LoadingGuard from '../components/LoadingGuard';
 import PinModal from '../components/PinModal';
+import api from '../utils/axios';
 
 const Portal = () => {
     const navigate = useNavigate();
-    const [user, setUser] = useState(null);
+    const { user, setUser, handleLogout } = useOutletContext();
     const [accounts, setAccounts] = useState([]);
     const [funds, setFunds] = useState([]);
     const [portfolio, setPortfolio] = useState([]);
@@ -45,49 +45,106 @@ const Portal = () => {
     const [isProcessing, setIsProcessing] = useState(false);
     const [isStatusModalOpen, setIsStatusModalOpen] = useState(false);
 
-    // ─── PIN Security States ───
+    // ─── Security & Verification States ───
     const [isPinModalOpen, setIsPinModalOpen] = useState(false);
     const [pinMode, setPinMode] = useState('VERIFY'); // 'VERIFY' or 'SETUP'
     const [pendingAction, setPendingAction] = useState(null);
+    const [isVerifyingStatus, setIsVerifyingStatus] = useState(true); // 🔥 Guard State
 
     const fetchAccounts = (userId) => {
-        fetch(`http://localhost:8080/api/accounts/user/${userId}`)
-            .then(res => res.json())
-            .then(data => setAccounts(data));
+        api.get(`/accounts/user/${userId}`)
+            .then(res => setAccounts(res.data))
+            .catch(err => console.error(err));
     };
 
     const fetchFunds = () => {
-        fetch('http://localhost:8080/api/funds')
-            .then(res => res.json())
-            .then(data => setFunds(data));
+        api.get('/funds')
+            .then(res => setFunds(res.data))
+            .catch(err => console.error(err));
     };
 
     const fetchPortfolio = (userId) => {
-        fetch(`http://localhost:8080/api/transactions/portfolio/${userId}`)
-            .then(res => res.json())
-            .then(data => setPortfolio(data));
+        api.get(`/transactions/portfolio/${userId}`)
+            .then(res => setPortfolio(res.data))
+            .catch(err => console.error(err));
     };
 
     const fetchFavorites = (userId) => {
-        fetch(`http://localhost:8080/api/favorites/user/${userId}`)
-            .then(res => res.json())
-            .then(data => setFavorites(data));
+        api.get(`/favorites/user/${userId}`)
+            .then(res => setFavorites(res.data))
+            .catch(err => console.error(err));
+    };
+
+    const fetchUserStatus = (userId) => {
+        api.get(`/auth/status/${userId}`)
+            .then(res => {
+                const { status, hasPin } = res.data;
+                
+                if (status === 'BANNED') {
+                    localStorage.removeItem('user');
+                    navigate('/login');
+                    return;
+                }
+
+                setUser(prevUser => {
+                    if (!prevUser) return prevUser;
+                    if (prevUser.status !== status || prevUser.hasPin !== hasPin) {
+                        const updated = { ...prevUser, status, hasPin };
+                        localStorage.setItem('user', JSON.stringify(updated));
+                        return updated;
+                    }
+                    return prevUser;
+                });
+            })
+            .catch(err => console.error("Refresh status failed", err));
     };
 
     useEffect(() => {
         const loggedInUser = localStorage.getItem('user');
         if (!loggedInUser) { navigate('/login'); return; }
         const userData = JSON.parse(loggedInUser);
-        setUser(userData);
-        fetchAccounts(userData.id);
-        fetchFavorites(userData.id);
-        fetchFunds();
-        fetchPortfolio(userData.id);
+
+        console.log("Portal initializing... Checking status for ID:", userData.id);
+
+        // 🔥 CRITICAL GUARD: ต้องเช็ค Status สำเร็จก่อนถึงจะปล่อยให้เข้าหน้าจอ
+        api.get(`/auth/status/${userData.id}`)
+            .then(res => {
+                const { status, hasPin } = res.data;
+                console.log("Portal status check success:", status);
+                
+                const freshUser = { ...userData, status, hasPin };
+                setUser(freshUser);
+                localStorage.setItem('user', JSON.stringify(freshUser));
+
+                if (status === 'BANNED' || status === 'BAN') {
+                    // ไม่เด้งทันที แต่จะให้ StatusNotification จัดการ
+                    setIsStatusModalOpen(true);
+                    setIsVerifyingStatus(false); 
+                    return;
+                }
+
+                setIsVerifyingStatus(false);
+
+                // โหลดข้อมูล Dashboard
+                fetchAccounts(userData.id);
+                fetchFavorites(userData.id);
+                fetchFunds();
+                fetchPortfolio(userData.id);
+            })
+            .catch(err => {
+                console.error("Critical status check failed:", err);
+                setUser(userData);
+                setIsVerifyingStatus(false);
+                fetchAccounts(userData.id);
+                fetchFavorites(userData.id);
+                fetchFunds();
+                fetchPortfolio(userData.id);
+            });
 
         const interval = setInterval(() => {
             fetchFunds();
             fetchPortfolio(userData.id);
-        }, 30000); 
+        }, 10000); 
         return () => clearInterval(interval);
     }, [navigate]);
 
@@ -129,37 +186,30 @@ const Portal = () => {
         }
 
         try {
-            const response = await fetch('http://localhost:8080/api/transactions/sell', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    accountId: sellDestId,
-                    fundId: selectedAsset.fundId,
-                    units: parseFloat(sellUnits)
-                })
+            const response = await api.post('/transactions/sell', {
+                accountId: sellDestId,
+                fundId: selectedAsset.fundId,
+                units: parseFloat(sellUnits)
             });
 
-            const data = await response.json();
-            if (response.ok) {
-                alert(`💰 ขายสำเร็จ!\nเงินเข้าบัญชี: ฿${data.received.toLocaleString()}`);
-                fetchAccounts(user.id);
-                fetchPortfolio(user.id);
-                setShowSellModal(false);
-                setSellUnits('');
-            } else {
-                alert(`❌ ขายไม่สำเร็จ: ${data.error}`);
-            }
+            const data = response.data;
+            alert(`💰 ขายสำเร็จ!\nเงินเข้าบัญชี: ฿${data.received.toLocaleString()}`);
+            fetchAccounts(user.id);
+            fetchPortfolio(user.id);
+            setShowSellModal(false);
+            setSellUnits('');
         } catch (error) {
-            alert("❌ ระบบขัดข้องโบร!");
+            const data = error.response?.data || {};
+            alert(`❌ ขายไม่สำเร็จ: ${data.error || 'ระบบขัดข้องโบร!'}`);
         }
     };
 
     useEffect(() => {
         if (destAccountNumber.length === 10) {
-            fetch(`http://localhost:8080/api/accounts/search?accountNumber=${destAccountNumber}`)
-                .then(res => res.json())
-                .then(data => {
-                    setDestAccountName(`${data.user.firstName} ${data.user.lastName} (${data.accountName})`);
+            api.get(`/accounts/search?accountNumber=${destAccountNumber}`)
+                .then(res => {
+                    const data = res.data;
+                    setDestAccountName(`${data.user.firstName} ${data.user.lastName}`);
                     setDestId(data.id);
                 })
                 .catch(() => {
@@ -169,7 +219,6 @@ const Portal = () => {
         } else { setDestAccountName(''); setDestId(null); }
     }, [destAccountNumber]);
 
-    const handleLogout = () => { localStorage.removeItem('user'); navigate('/login'); };
     const handleSaveSlip = () => {
         const slip = document.getElementById('digital-slip');
         if (!slip) return;
@@ -191,45 +240,55 @@ const Portal = () => {
     const handleDeleteAccount = async (accountId, balance) => {
         if (Number(balance) > 0) { alert("ย้ายเงินออกให้หมดก่อนลบนะโบร!"); return; }
         if (window.confirm("คุณแน่ใจใช่ไหมที่จะลบกระเป๋านี้?")) {
-            const res = await fetch(`http://localhost:8080/api/accounts/${accountId}`, { method: 'DELETE' });
-            if (res.ok) { alert("ลบสำเร็จ!"); fetchAccounts(user.id); }
+            try {
+                await api.delete(`/accounts/${accountId}`);
+                alert("ลบสำเร็จ!");
+                fetchAccounts(user.id);
+            } catch (error) {
+                console.error(error);
+            }
         }
     };
 
     const submitCreateAccount = async () => {
         if (!newAccountName.trim()) return;
-        const res = await fetch(`http://localhost:8080/api/accounts/user/${user.id}/create`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ accountName: newAccountName, savingsGoal: parseFloat(newAccountGoal) || 0 })
-        });
-        if (res.ok) { fetchAccounts(user.id); setShowCreateModal(false); setNewAccountName(''); setNewAccountGoal(''); }
+        try {
+            await api.post(`/accounts/user/${user.id}/create`, {
+                accountName: newAccountName,
+                savingsGoal: parseFloat(newAccountGoal) || 0
+            });
+            fetchAccounts(user.id);
+            setShowCreateModal(false);
+            setNewAccountName('');
+            setNewAccountGoal('');
+        } catch (error) {
+            console.error(error);
+        }
     };
 
     const handleTransfer = async () => {
         if (!sourceId || !destId || !transferAmount) return;
         setIsProcessing(true);
         try {
-            const res = await fetch('http://localhost:8080/api/transactions/transfer', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ sourceAccountId: sourceId, destinationAccountId: destId, amount: transferAmount })
+            const res = await api.post('/transactions/transfer', {
+                sourceAccountId: sourceId,
+                destinationAccountId: destId,
+                amount: transferAmount
             });
-            const data = await res.json();
-            if (res.ok) { 
-                setSlipData({ 
-                    ...data, 
-                    toName: destAccountName, // ✅ ใส่ชื่อผู้รับ
-                    date: new Date().toLocaleString('th-TH') 
-                }); 
-                setShowSlipModal(true); 
-                fetchAccounts(user.id); 
-                setShowTransferModal(false); 
-                setTransferAmount('');
-                setDestAccountNumber('');
-            } else {
-                alert(`❌ โอนไม่สำเร็จ: ${data.error}`);
-            }
+            const data = res.data;
+            setSlipData({ 
+                ...data, 
+                toName: destAccountName, // ✅ ใส่ชื่อผู้รับ
+                date: new Date().toLocaleString('th-TH') 
+            }); 
+            setShowSlipModal(true); 
+            fetchAccounts(user.id); 
+            setShowTransferModal(false); 
+            setTransferAmount('');
+            setDestAccountNumber('');
         } catch (error) {
-            alert("❌ ระบบขัดข้อง");
+            const data = error.response?.data || {};
+            alert(`❌ โอนไม่สำเร็จ: ${data.error || 'ระบบขัดข้อง'}`);
         } finally {
             setIsProcessing(false);
         }
@@ -238,22 +297,36 @@ const Portal = () => {
     const handleWithdraw = async () => {
         if (!withdrawAccountId || !withdrawAmount) return;
         setIsProcessing(true);
-        const res = await fetch('http://localhost:8080/api/transactions/withdraw', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ accountId: withdrawAccountId, amount: Number(withdrawAmount) })
-        });
-        if (res.ok) { alert("ถอนเงินสำเร็จ!"); fetchAccounts(user.id); setShowWithdrawModal(false); }
+        try {
+            await api.post('/transactions/withdraw', {
+                accountId: withdrawAccountId,
+                amount: Number(withdrawAmount)
+            });
+            alert("ถอนเงินสำเร็จ!");
+            fetchAccounts(user.id);
+            setShowWithdrawModal(false);
+        } catch (error) {
+            console.error(error);
+        }
         setIsProcessing(false);
     };
 
     const handleMoveMoney = async () => {
         if (!moveSourceAcc || !moveDestId || !moveAmount) return;
         if (checkSuspension()) return;
-        const res = await fetch('http://localhost:8080/api/transactions/move-money', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sourceAccountId: moveSourceAcc.id, destinationAccountId: moveDestId, amount: moveAmount })
-        });
-        if (res.ok) { alert("ย้ายเงินสำเร็จ!"); fetchAccounts(user.id); setShowMoveModal(false); }
+        try {
+            await api.post('/transactions/transfer', {
+                sourceAccountId: moveSourceAcc.id,
+                destinationAccountId: moveDestId,
+                amount: moveAmount
+            });
+            alert("ย้ายเงินสำเร็จ!");
+            fetchAccounts(user.id);
+            setShowMoveModal(false);
+        } catch (error) {
+            console.error(error);
+            alert(`ย้ายเงินไม่สำเร็จ: ${error.response?.data?.error || error.message}`);
+        }
     };
 
     const checkSuspension = () => {
@@ -264,108 +337,143 @@ const Portal = () => {
         return false;
     };
 
-    if (!user) return null;
-    const totalBalance = accounts.reduce((sum, acc) => sum + acc.balance, 0);
+    // 🔥 Auto-Show Status Modal when status changed in background
+    useEffect(() => {
+        if (user?.status && (user.status === 'SUSPENDED' || user.status === 'BANNED')) {
+            setIsStatusModalOpen(true);
+        }
+    }, [user?.status]);
 
     return (
-        <div className="min-h-screen bg-slate-50 font-sans text-slate-800">
-            <NavbarUser user={user} onLogout={handleLogout} />
-
-            <main className="max-w-5xl mx-auto p-8">
-                <div className="bg-gradient-to-br from-[#065f46] to-[#042f2e] rounded-[2.5rem] p-10 text-white shadow-2xl mb-10 relative overflow-hidden font-display">
-                    <p className="text-emerald-200/60 text-sm font-bold uppercase tracking-widest mb-2">Total Balance</p>
-                    <h1 className="text-6xl font-black mb-10">฿{totalBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })}</h1>
-                    <div className="flex flex-wrap gap-4">
-                        <button onClick={() => checkSuspension() ? null : setShowTransferModal(true)} className="bg-white text-emerald-900 px-8 py-4 rounded-2xl font-bold text-sm shadow-lg active:scale-95 transition-all">Transfer</button>
-                        <button onClick={() => checkSuspension() ? null : setShowWithdrawModal(true)} className="bg-emerald-800/40 text-white border border-emerald-700 px-8 py-4 rounded-2xl font-bold text-sm active:scale-95 transition-all">Withdraw</button>
-                        <button onClick={() => navigate('/statement')} className="bg-emerald-800/40 text-white border border-emerald-700 px-8 py-4 rounded-2xl font-bold text-sm active:scale-95 transition-all">Statement</button>
-                        <button onClick={() => checkSuspension() ? null : navigate('/investment')} className="bg-amber-500/20 text-amber-400 border border-amber-500/40 px-8 py-4 rounded-2xl font-bold text-sm active:scale-95 transition-all hover:bg-amber-500/30">Investment</button>
+        <LoadingGuard
+            isLoading={isVerifyingStatus}
+            user={user}
+            isStatusModalOpen={isStatusModalOpen}
+            onCloseModal={() => {
+                setIsStatusModalOpen(false);
+                if (user?.status?.toUpperCase() === 'BANNED' || user?.status?.toUpperCase() === 'BAN') {
+                    handleLogout();
+                }
+            }}
+            message="Verifying Account Security..."
+            theme="light"
+        >
+            {user && (() => {
+                const subPockets = accounts.filter(a => a.accountName.toUpperCase() !== 'MAIN ACCOUNT');
+                const displayPockets = subPockets.slice(0, 2);
+                const totalBalance = accounts.reduce((sum, acc) => sum + Number(acc.balance || 0), 0);
+                return (
+                    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans overflow-x-hidden">
+            
+            <div className="animate-slideInRight">
+                <main className="max-w-5xl mx-auto p-8">
+                    {/* ... existing content ... */}
+                    <div className="bg-gradient-to-br from-[#065f46] to-[#042f2e] rounded-[3rem] p-12 text-white shadow-2xl shadow-emerald-900/20 mb-12 relative overflow-hidden font-display border border-white/10">
+                        <p className="text-emerald-100/60 text-xs font-black uppercase tracking-[0.3em] mb-3">Total Balance</p>
+                        <h1 className="text-7xl font-black mb-12 flex items-baseline gap-2">
+                            <span className="text-4xl text-emerald-400">฿</span>
+                            {totalBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        </h1>
+                        <div className="flex flex-wrap gap-4 mt-8">
+                            <button onClick={() => checkSuspension() ? null : setShowTransferModal(true)} className="bg-white text-emerald-900 px-8 py-4 rounded-2xl font-bold text-sm shadow-lg active:scale-95 transition-all">Transfer</button>
+                            <button onClick={() => checkSuspension() ? null : setShowWithdrawModal(true)} className="bg-emerald-800/40 text-white border border-emerald-700 px-8 py-4 rounded-2xl font-bold text-sm active:scale-95 transition-all">Withdraw</button>
+                            <button onClick={() => handleShowQR(accounts.find(a => a.accountName.toUpperCase() === 'MAIN ACCOUNT'))} className="bg-emerald-800/40 text-white border border-emerald-700 px-8 py-4 rounded-2xl font-bold text-sm active:scale-95 transition-all flex items-center gap-2">
+                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" /></svg>
+                                 My QR
+                            </button>
+                            <button onClick={() => navigate('/statement')} className="bg-emerald-800/40 text-white border border-emerald-700 px-8 py-4 rounded-2xl font-bold text-sm active:scale-95 transition-all">Statement</button>
+                            <button onClick={() => checkSuspension() ? null : navigate('/investment')} className="bg-amber-500/20 text-amber-400 border border-amber-500/40 px-8 py-4 rounded-2xl font-bold text-sm active:scale-95 transition-all hover:bg-amber-500/30">Investment</button>
+                        </div>
                     </div>
-                </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
-                    <div className="lg:col-span-2">
-                        <div className="flex justify-between items-end mb-6 px-2">
-                            <h2 className="text-2xl font-black text-slate-800">My Pockets</h2>
-                            <button onClick={() => checkSuspension() ? null : setShowCreateModal(true)} className="text-emerald-600 font-bold uppercase text-[11px] tracking-widest hover:text-emerald-700">+ Add Pocket</button>
-                        </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-12">
-                            {accounts.map((account) => {
-                                const goal = Number(account.savingsGoal || account.savings_goal) || 0;
-                                const balance = Number(account.balance) || 0;
-                                const percentage = goal > 0 ? Math.min((balance / goal) * 100, 100) : 0;
-                                return (
-                                    <div key={account.id} className="bg-white border border-slate-100 rounded-[2rem] p-6 shadow-sm group hover:shadow-md transition-all">
-                                        <div className="flex justify-between items-start mb-6">
-                                            <div className="flex flex-col gap-1">
-                                                <p className="text-slate-400 text-[10px] font-black uppercase">{account.accountName}</p>
-                                                <p className="text-slate-500 font-mono text-[10px]">#{account.accountNumber}</p>
-                                            </div>
-                                            <div className="flex gap-2">
-                                                <button onClick={() => handleShowQR(account)} className="bg-slate-50 text-slate-400 p-2 rounded-xl hover:bg-emerald-50 hover:text-emerald-600 shadow-sm transition-all"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" /></svg></button>
-                                                <button onClick={() => { setMoveSourceAcc(account); setShowMoveModal(true); }} className="bg-emerald-50 text-emerald-600 px-3 py-1.5 rounded-xl font-bold text-[10px] uppercase tracking-wider hover:bg-emerald-100 shadow-sm transition-colors">Move Money</button>
-                                            </div>
-                                        </div>
-                                        <h3 className="text-3xl font-black">฿{balance.toLocaleString()}</h3>
-                                        <div className="mt-6 space-y-2">
-                                            <div className="flex justify-between items-end"><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Savings Goal</p><p className="text-[10px] font-black text-emerald-600 uppercase">{goal > 0 ? `${percentage.toFixed(0)}%` : '0%'}</p></div>
-                                            <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden"><div className="h-full bg-emerald-500 rounded-full transition-all duration-1000" style={{ width: `${percentage}%` }}></div></div>
-                                        </div>
-                                    </div>
-                                );
-                            })}
-                        </div>
-
-                        <div className="px-2">
-                            <h2 className="text-2xl font-black text-slate-800 mb-6">My Assets 📈</h2>
-                            <div className="grid grid-cols-1 gap-4">
-                                {portfolio.length > 0 ? portfolio.map(item => {
-                                    const fundInfo = funds.find(f => f.id === item.fundId);
-                                    const currentNav = fundInfo ? fundInfo.nav : item.avgPrice;
-                                    const profit = (currentNav - item.avgPrice) * item.units;
-                                    const profitPercent = ((currentNav - item.avgPrice) / item.avgPrice) * 100;
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
+                        <div className="lg:col-span-2">
+                        <div className="mb-12">
+                            <div className="flex justify-between items-end mb-6 px-2">
+                                <h2 className="text-2xl font-black text-slate-800">My Pockets</h2>
+                                <button onClick={() => navigate('/your-pocket')} className="text-emerald-600 font-bold uppercase text-[11px] tracking-widest hover:text-emerald-700">Go to pocket</button>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                {displayPockets.length > 0 ? displayPockets.map((account) => {
+                                    const goal = Number(account.savingsGoal || account.savings_goal) || 0;
+                                    const balance = Number(account.balance) || 0;
+                                    const percentage = goal > 0 ? Math.min((balance / goal) * 100, 100) : 0;
                                     return (
-                                        <div key={item.id} className="bg-white border border-slate-100 rounded-[2rem] p-6 flex justify-between items-center shadow-sm">
-                                            <div className="flex items-center gap-4">
-                                                <div className="w-12 h-12 bg-indigo-50 rounded-2xl flex items-center justify-center font-black text-indigo-600">{fundInfo?.fundCode.slice(-2) || '??'}</div>
-                                                <div>
-                                                    <p className="text-[10px] font-black text-slate-400 uppercase">{fundInfo?.fundName || 'Loading...'}</p>
-                                                    <p className="text-xl font-black">{item.units.toFixed(4)} Units</p>
-                                                    <button 
-                                                        onClick={() => { setSelectedAsset(item); setSellUnits(item.units); setSellDestId(accounts[0]?.id); setShowSellModal(true); }}
-                                                        className="mt-2 text-[10px] font-black text-rose-500 border border-rose-500/30 px-4 py-1.5 rounded-xl hover:bg-rose-500 hover:text-white transition-all uppercase tracking-widest active:scale-95"
-                                                    >
-                                                        Sell
-                                                    </button>
+                                        <div key={account.id} className="bg-white border border-slate-100 rounded-[2rem] p-6 shadow-sm group hover:shadow-md transition-all">
+                                            <div className="flex justify-between items-start mb-6">
+                                                <div className="flex flex-col gap-1">
+                                                    <p className="text-slate-400 text-[10px] font-black uppercase">{account.accountName}</p>
+                                                    <p className="text-slate-500 font-mono text-[10px]">#{account.accountNumber}</p>
+                                                </div>
+                                                <div className="flex gap-2">
+                                                    <button onClick={() => handleShowQR(account)} className="bg-slate-50 text-slate-400 p-2 rounded-xl hover:bg-emerald-50 hover:text-emerald-600 shadow-sm transition-all"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" /></svg></button>
+                                                    <button onClick={() => { setMoveSourceAcc(account); setShowMoveModal(true); }} className="bg-emerald-50 text-emerald-600 px-3 py-1.5 rounded-xl font-bold text-[10px] uppercase tracking-wider hover:bg-emerald-100 shadow-sm transition-colors">Move Money</button>
                                                 </div>
                                             </div>
-                                            <div className="text-right">
-                                                <p className={`text-sm font-bold ${profit >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>{profit >= 0 ? '+' : ''}{profit.toFixed(2)} THB ({profitPercent.toFixed(2)}%)</p>
-                                                <p className="text-[10px] font-bold text-slate-400 uppercase">Market Value: ฿{(item.units * currentNav).toLocaleString()}</p>
+                                            <h3 className="text-3xl font-black">฿{balance.toLocaleString()}</h3>
+                                            <div className="mt-6 space-y-2">
+                                                <div className="flex justify-between items-end"><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Savings Goal</p><p className="text-[10px] font-black text-emerald-600 uppercase">{goal > 0 ? `${percentage.toFixed(0)}%` : '0%'}</p></div>
+                                                <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden"><div className="h-full bg-emerald-500 rounded-full transition-all duration-1000" style={{ width: `${percentage}%` }}></div></div>
                                             </div>
                                         </div>
                                     );
                                 }) : (
-                                    <div className="bg-slate-50 border-2 border-dashed border-slate-200 rounded-[2rem] p-10 text-center"><p className="text-slate-400 text-sm font-bold italic">ไม่มีสินทรัพย์... ไปที่ Marketplace เลยโบร!</p></div>
+                                    <div className="bg-slate-50 border-2 border-dashed border-slate-200 rounded-[2rem] p-10 text-center col-span-1 md:col-span-2"><p className="text-slate-400 text-sm font-bold italic">No pockets yet. Go create one!</p></div>
                                 )}
                             </div>
                         </div>
-                    </div>
 
-                    <div>
-                        <div className="flex justify-between items-end mb-6 px-2"><h2 className="text-2xl font-black text-slate-800">Market</h2><span className="text-[10px] text-slate-400 font-bold uppercase animate-pulse">Live</span></div>
-                        <div className="bg-white border border-slate-100 rounded-[2.5rem] p-6 shadow-sm space-y-6">
-                            {funds.map(fund => (
-                                <div key={fund.id} className="flex justify-between items-center group">
-                                    <div className="flex items-center gap-3"><div className="w-10 h-10 bg-slate-50 rounded-2xl flex items-center justify-center text-xs font-black text-slate-400 group-hover:bg-amber-50 group-hover:text-amber-600 transition-all">{fund.fundCode.slice(-2)}</div><div><p className="text-[11px] font-black text-slate-800 uppercase">{fund.fundCode}</p><p className="text-[9px] text-slate-400 font-medium">{fund.fundName}</p></div></div>
-                                    <div className="text-right"><p className="text-xs font-black text-slate-800 font-mono">{fund.nav.toFixed(4)}</p><p className="text-[9px] font-bold text-emerald-500">NAV</p></div>
+                            <div className="px-2">
+                                <h2 className="text-2xl font-black text-slate-800 mb-6">My Assets 📈</h2>
+                                <div className="grid grid-cols-1 gap-4">
+                                    {portfolio.length > 0 ? portfolio.map(item => {
+                                        const fundInfo = funds.find(f => f.id === item.fundId);
+                                        const currentNav = fundInfo ? fundInfo.nav : item.avgPrice;
+                                        const profit = (currentNav - item.avgPrice) * item.units;
+                                        const profitPercent = ((currentNav - item.avgPrice) / item.avgPrice) * 100;
+                                        return (
+                                            <div key={item.id} className="bg-white border border-slate-100 rounded-[2rem] p-6 flex justify-between items-center shadow-sm">
+                                                <div className="flex items-center gap-4">
+                                                    <div className="w-12 h-12 bg-indigo-50 rounded-2xl flex items-center justify-center font-black text-indigo-600">{fundInfo?.fundCode.slice(-2) || '??'}</div>
+                                                    <div>
+                                                        <p className="text-[10px] font-black text-slate-400 uppercase">{fundInfo?.fundName || 'Loading...'}</p>
+                                                        <p className="text-xl font-black">{item.units.toFixed(4)} Units</p>
+                                                        <button 
+                                                            onClick={() => { setSelectedAsset(item); setSellUnits(item.units); setSellDestId(accounts[0]?.id); setShowSellModal(true); }}
+                                                            className="mt-2 text-[10px] font-black text-rose-500 border border-rose-500/30 px-4 py-1.5 rounded-xl hover:bg-rose-500 hover:text-white transition-all uppercase tracking-widest active:scale-95"
+                                                        >
+                                                            Sell
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                                <div className="text-right">
+                                                    <p className={`text-sm font-bold ${profit >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>{profit >= 0 ? '+' : ''}{profit.toFixed(2)} THB ({profitPercent.toFixed(2)}%)</p>
+                                                    <p className="text-[10px] font-bold text-slate-400 uppercase">Market Value: ฿{(item.units * currentNav).toLocaleString()}</p>
+                                                </div>
+                                            </div>
+                                        );
+                                    }) : (
+                                        <div className="bg-slate-50 border-2 border-dashed border-slate-200 rounded-[2rem] p-10 text-center"><p className="text-slate-400 text-sm font-bold italic">ไม่มีสินทรัพย์... ไปที่ Marketplace เลยโบร!</p></div>
+                                    )}
                                 </div>
-                            ))}
-                            <button onClick={() => navigate('/investment')} className="w-full py-4 bg-slate-50 text-slate-400 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-emerald-50 hover:text-emerald-600 transition-all border border-transparent hover:border-emerald-100 shadow-sm active:scale-95">Marketplace</button>
+                            </div>
+                        </div>
+
+                        <div>
+                            <div className="flex justify-between items-end mb-6 px-2"><h2 className="text-2xl font-black text-slate-800">Market</h2><span className="text-[10px] text-slate-400 font-bold uppercase animate-pulse">Live</span></div>
+                            <div className="bg-white border border-slate-100 rounded-[2.5rem] p-6 shadow-sm space-y-6">
+                                {funds.map(fund => (
+                                    <div key={fund.id} className="flex justify-between items-center group">
+                                        <div className="flex items-center gap-3"><div className="w-10 h-10 bg-slate-50 rounded-2xl flex items-center justify-center text-xs font-black text-slate-400 group-hover:bg-amber-50 group-hover:text-amber-600 transition-all">{fund.fundCode.slice(-2)}</div><div><p className="text-[11px] font-black text-slate-800 uppercase">{fund.fundCode}</p><p className="text-[9px] text-slate-400 font-medium">{fund.fundName}</p></div></div>
+                                        <div className="text-right"><p className="text-xs font-black text-slate-800 font-mono">{fund.nav.toFixed(4)}</p><p className="text-[9px] font-bold text-emerald-500">NAV</p></div>
+                                    </div>
+                                ))}
+                                <button onClick={() => navigate('/investment')} className="w-full py-4 bg-slate-50 text-slate-400 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-emerald-50 hover:text-emerald-600 transition-all border border-transparent hover:border-emerald-100 shadow-sm active:scale-95">Marketplace</button>
+                            </div>
                         </div>
                     </div>
-                </div>
-            </main>
+                </main>
+            </div>
 
             {/* Modals */}
             {showSellModal && selectedAsset && (
@@ -510,26 +618,17 @@ const Portal = () => {
                     </div>
                 </div>
             )}
-
-            <StatusNotification 
-                isOpen={isStatusModalOpen} 
-                onClose={() => {
-                    setIsStatusModalOpen(false);
-                    if (user?.status?.toUpperCase() === 'BANNED' || user?.status?.toUpperCase() === 'BAN') {
-                        handleLogout();
-                    }
-                }} 
-                status={user?.status} 
-            />
-
             <PinModal 
                 isOpen={isPinModalOpen}
                 onClose={() => setIsPinModalOpen(false)}
                 onSuccess={handlePinSuccess}
                 mode={pinMode}
-                userId={user.id}
+                userId={user?.id}
             />
-        </div>
+                    </div>
+                );
+            })()}
+        </LoadingGuard>
     );
 };
 

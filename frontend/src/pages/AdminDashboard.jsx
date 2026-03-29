@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import NavbarAdmin from '../components/Navbar-Admin';
+import api from '../utils/axios';
 
 const AdminDashboard = () => {
     const navigate = useNavigate();
@@ -19,16 +20,14 @@ const AdminDashboard = () => {
     const [fundData, setFundData] = useState({ fundCode: '', fundName: '', nav: '', type: 'Low Risk' });
 
     const fetchAllUsers = () => {
-        fetch('http://localhost:8080/api/admin/users')
-            .then(res => res.json())
-            .then(data => setUsers(data.filter(u => u.role === 'USER')))
+        api.get('/admin/users')
+            .then(res => setUsers(res.data.filter(u => u.role === 'USER')))
             .catch(err => console.error(err));
     };
 
     const fetchAllFunds = () => {
-        fetch('http://localhost:8080/api/funds')
-            .then(res => res.json())
-            .then(data => setFunds(data))
+        api.get('/funds')
+            .then(res => setFunds(res.data))
             .catch(err => console.error(err));
     };
 
@@ -37,9 +36,24 @@ const AdminDashboard = () => {
         if (!loggedInUser) { navigate('/login'); return; }
         const userData = JSON.parse(loggedInUser);
         if (userData.role !== 'ADMIN') { navigate('/portal'); return; }
-        setAdmin(userData);
-        fetchAllUsers();
-        fetchAllFunds();
+
+        api.get(`/auth/status/${userData.id}`)
+            .then(res => {
+                const { status } = res.data;
+                if (status === 'BANNED' || status === 'BAN') {
+                    localStorage.removeItem('user');
+                    window.location.href = '/login';
+                    return;
+                }
+                setAdmin(userData);
+                fetchAllUsers();
+                fetchAllFunds();
+            })
+            .catch(() => {
+                setAdmin(userData);
+                fetchAllUsers();
+                fetchAllFunds();
+            });
 
         const interval = setInterval(fetchAllFunds, 30000);
         return () => clearInterval(interval);
@@ -47,44 +61,44 @@ const AdminDashboard = () => {
 
     const handleUpdateStatus = async (userId, newStatus) => {
         if (!window.confirm(`ยืนยันการเปลี่ยนสถานะเป็น ${newStatus}?`)) return;
-        await fetch(`http://localhost:8080/api/admin/user/${userId}/status`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ status: newStatus })
-        });
-        fetchAllUsers();
+        try {
+            await api.post(`/admin/user/${userId}/status`, { status: newStatus });
+            fetchAllUsers();
+        } catch (error) {
+            console.error(error);
+        }
     };
 
     const handleManageUser = (user) => {
         setSelectedUser(user);
-        fetch(`http://localhost:8080/api/accounts/user/${user.id}`)
-            .then(res => res.json())
-            .then(data => setUserAccounts(data));
+        api.get(`/accounts/user/${user.id}`)
+            .then(res => setUserAccounts(res.data))
+            .catch(err => console.error(err));
     };
 
     const mintMoney = async (accountId) => {
         if (!amount || Number(amount) <= 0) return;
         setIsMinting(true);
-        const response = await fetch('http://localhost:8080/api/admin/mint-money', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ accountId: accountId, amount: Number(amount) })
-        });
-        if (response.ok) { alert("เติมเงินสำเร็จ!"); setAmount(''); handleManageUser(selectedUser); }
+        try {
+            await api.post('/admin/mint-money', { accountId: accountId, amount: Number(amount) });
+            alert("เติมเงินสำเร็จ!");
+            setAmount('');
+            handleManageUser(selectedUser);
+        } catch (error) {
+            console.error(error);
+        }
         setIsMinting(false);
     };
 
     const handleAddFund = async (e) => {
         e.preventDefault();
-        const res = await fetch('http://localhost:8080/api/funds/add', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ...fundData, nav: parseFloat(fundData.nav) })
-        });
-        if (res.ok) {
+        try {
+            await api.post('/funds/add', { ...fundData, nav: parseFloat(fundData.nav) });
             alert("Launch Fund สำเร็จ!");
             setFundData({ fundCode: '', fundName: '', nav: '', type: 'Low Risk' });
             fetchAllFunds();
+        } catch (error) {
+            console.error(error);
         }
     };
 

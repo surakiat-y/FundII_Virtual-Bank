@@ -63,4 +63,21 @@ public class AuthController {
             return ResponseEntity.badRequest().body(Map.of("error", "Username หรือ Password ไม่ถูกต้อง!"));
         }
     }
-}
+
+    @GetMapping("/status/{userId}")
+    public ResponseEntity<?> getStatus(@PathVariable Long userId) {
+        System.out.println("Checking status for userId: " + userId);
+        return userRepository.findById(userId)
+                .map(user -> {
+                    System.out.println("User found: " + user.getUsername() + " Status: " + user.getStatus());
+                    return ResponseEntity.ok(Map.of(
+                        "status", user.getStatus(),
+                        "hasPin", user.getPin() != null && !user.getPin().isEmpty()
+                    ));
+                })
+                .orElseGet(() -> {
+                    System.out.println("User not found for ID: " + userId);
+                    return ResponseEntity.notFound().build();
+                });
+    }
+}

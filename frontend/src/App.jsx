@@ -6,7 +6,9 @@ import Portal from './pages/Portal';
 import AdminDashboard from './pages/AdminDashboard';
 import Statement from './pages/Statement';
 import Investment from './pages/Investment';
+import YourPocket from './pages/YourPocket';
 import AdminPanel from './pages/AdminPanel';
+import UserLayout from './components/UserLayout';
 import './App.css';
 
 function App() {
@@ -16,10 +18,16 @@ function App() {
         <Route path="/" element={<Welcome />} />
         <Route path="/login" element={<Login />} />
         <Route path="/create-account" element={<SignUp />} />
-        <Route path="/portal" element={<Portal />} />
+        
+        {/* User Protected Routes with Persistent Navbar */}
+        <Route element={<UserLayout />}>
+          <Route path="/portal" element={<Portal />} />
+          <Route path="/statement" element={<Statement />} />
+          <Route path="/investment" element={<Investment />} />
+          <Route path="/your-pocket" element={<YourPocket />} />
+        </Route>
+
         <Route path="/admin-dashboard" element={<AdminDashboard />} />
-        <Route path="/statement" element={<Statement />} />
-        <Route path="/investment" element={<Investment />} />
         <Route path="/admin" element={<AdminPanel />} />
       </Routes>
     </Router>

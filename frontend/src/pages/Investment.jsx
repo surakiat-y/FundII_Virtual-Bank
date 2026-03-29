@@ -1,13 +1,14 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import StatusNotification from '../components/StatusNotification';
+import { useNavigate, useOutletContext } from 'react-router-dom';
+import LoadingGuard from '../components/LoadingGuard';
 import PinModal from '../components/PinModal';
+import api from '../utils/axios';
 
 const Investment = () => {
     const navigate = useNavigate();
+    const { user, setUser, handleLogout } = useOutletContext();
     const [funds, setFunds] = useState([]);
     const [accounts, setAccounts] = useState([]);
-    const [user, setUser] = useState(null);
     
     // States สำหรับ Modal ซื้อ
     const [showBuyModal, setShowBuyModal] = useState(false);
@@ -16,16 +17,16 @@ const Investment = () => {
     const [sourceId, setSourceId] = useState('');
     const [isStatusModalOpen, setIsStatusModalOpen] = useState(false);
 
-    // ─── PIN Security States ───
+    // ─── Security States ───
     const [isPinModalOpen, setIsPinModalOpen] = useState(false);
     const [pinMode, setPinMode] = useState('VERIFY'); // 'VERIFY' or 'SETUP'
     const [pendingAction, setPendingAction] = useState(null);
 
     // แยกฟังก์ชันดึงข้อมูลบัญชีออกมาเพื่อให้เรียกซ้ำได้หลังจากซื้อสำเร็จ
     const fetchAccounts = (userId) => {
-        fetch(`http://localhost:8080/api/accounts/user/${userId}`)
-            .then(res => res.json())
-            .then(data => setAccounts(data));
+        api.get(`/accounts/user/${userId}`)
+            .then(res => setAccounts(res.data))
+            .catch(err => console.error(err));
     };
 
     useEffect(() => {
@@ -33,19 +34,19 @@ const Investment = () => {
         if (!loggedInUser) return;
         const userData = JSON.parse(loggedInUser);
         setUser(userData);
-        
+
         fetchAccounts(userData.id);
 
         const fetchFunds = () => {
-            fetch('http://localhost:8080/api/funds')
-                .then(res => res.json())
-                .then(data => setFunds(data));
+            api.get('/funds')
+                .then(res => setFunds(res.data))
+                .catch(err => console.error(err));
         };
 
         fetchFunds();
         const interval = setInterval(fetchFunds, 10000); 
         return () => clearInterval(interval);
-    }, []);
+    }, [navigate]);
 
     const checkSuspension = () => {
         if (user?.status?.toUpperCase() === 'SUSPENDED' || user?.status?.toUpperCase() === 'BANNED' || user?.status?.toUpperCase() === 'BAN') {
@@ -54,6 +55,13 @@ const Investment = () => {
         }
         return false;
     };
+
+    // 🔥 Auto-Show Status Modal when status changed in background
+    useEffect(() => {
+        if (user?.status && (user.status === 'SUSPENDED' || user.status === 'BANNED')) {
+            setIsStatusModalOpen(true);
+        }
+    }, [user?.status]);
 
     // 🔥 PIN Verification Wrapper
     const requestPin = (action) => {
@@ -90,87 +98,80 @@ const Investment = () => {
         }
         
         try {
-            const response = await fetch('http://localhost:8080/api/transactions/invest', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    accountId: sourceId,
-                    fundId: selectedFund.id,
-                    amount: parseFloat(buyAmount)
-                })
+            const response = await api.post('/transactions/invest', {
+                accountId: sourceId,
+                fundId: selectedFund.id,
+                amount: parseFloat(buyAmount)
             });
 
-            const data = await response.json();
-
-            if (response.ok) {
-                const units = (parseFloat(buyAmount) / selectedFund.nav).toFixed(4);
-                alert(`🎉 ${data.message}\nใช้เงิน: ฿${buyAmount}\nได้รับหน่วยลงทุน: ${units} Units`);
-                
-                // ✅ สำคัญ: รีเฟรชยอดเงินในหน้าจอทันที
-                fetchAccounts(user.id);
-                
-                setShowBuyModal(false);
-                setBuyAmount('');
-                setSourceId('');
-            } else {
-                // แสดง Error จากหลังบ้าน (เช่น เงินไม่พอ)
-                alert(`❌ เกิดข้อผิดพลาด: ${data.error}`);
-            }
+            const data = response.data;
+            const units = (parseFloat(buyAmount) / selectedFund.nav).toFixed(4);
+            alert(`🎉 ${data.message}\nใช้เงิน: ฿${buyAmount}\nได้รับหน่วยลงทุน: ${units} Units`);
+            
+            // ✅ สำคัญ: รีเฟรชยอดเงินในหน้าจอทันที
+            fetchAccounts(user.id);
+            
+            setShowBuyModal(false);
+            setBuyAmount('');
+            setSourceId('');
         } catch (error) {
-            console.error("Investment error:", error);
-            alert("❌ ระบบขัดข้อง ติดต่อแอดมินด่วน");
+            const data = error.response?.data || {};
+            alert(`❌ เกิดข้อผิดพลาด: ${data.error || 'ระบบขัดข้อง ติดต่อแอดมินด่วน'}`);
         }
     };
 
-    return (
-        <div className="min-h-screen bg-[#0f172a] text-white font-sans p-8">
-            <header className="max-w-4xl mx-auto flex justify-between items-center mb-10">
-                <div>
-                    <h1 className="text-3xl font-black tracking-tight font-display">Marketplace</h1>
-                    <p className="text-slate-400 text-sm">เลือกลงทุนในกองทุนรวมที่คุณเชื่อใจ</p>
-                </div>
-                <button onClick={() => navigate('/portal')} className="bg-slate-800 px-5 py-2 rounded-xl text-xs font-bold hover:bg-slate-700 transition-all">← Back</button>
-            </header>
+    // Instant Access - No background status check here
 
-            <main className="max-w-4xl mx-auto space-y-4">
-                {funds.map((fund) => (
-                    <div key={fund.id} className="bg-slate-900/50 border border-white/5 p-8 rounded-[2.5rem] flex justify-between items-center hover:border-emerald-500/30 transition-all">
-                        <div className="flex gap-6 items-center">
-                            <div className="w-14 h-14 bg-emerald-500/10 rounded-2xl flex items-center justify-center text-2xl font-black text-emerald-500">
-                                {fund.fundCode.charAt(3)}
-                            </div>
-                            <div>
-                                <h3 className="text-xl font-bold">{fund.fundName}</h3>
-                                <p className="text-xs text-slate-500 font-mono">{fund.fundCode} • <span className="text-rose-400">{fund.type}</span></p>
-                            </div>
-                        </div>
-                        <div className="flex items-center gap-10">
-                            <div className="text-right">
-                                <p className="text-[10px] text-slate-500 font-black uppercase mb-1">Market Price (NAV)</p>
-                                <p className="text-3xl font-mono font-black text-emerald-400 tracking-tighter">{fund.nav.toFixed(4)}</p>
-                            </div>
-                            <button 
-                                onClick={() => checkSuspension() ? null : (setSelectedFund(fund), setShowBuyModal(true))}
-                                className="bg-white text-slate-900 px-8 py-4 rounded-2xl font-black text-sm uppercase tracking-widest hover:bg-emerald-400 transition-all active:scale-95"
-                            >
-                                Invest
-                            </button>
-                        </div>
+    return (
+        <div className="min-h-screen bg-slate-50 text-slate-800 font-sans">
+            <div className="animate-slideInRight">
+                <header className="max-w-4xl mx-auto mb-10 pt-10 px-4 flex justify-between items-center">
+                    <div className="flex items-center gap-4">
+                        <h1 className="text-4xl font-black text-slate-900 tracking-tighter">Marketplace</h1>
+                        <span className="text-[10px] font-black bg-slate-100 text-slate-400 px-3 py-1 rounded-full border border-slate-200/50">{funds.length} Total</span>
                     </div>
-                ))}
-            </main>
+                </header>
+
+                <main className="max-w-4xl mx-auto space-y-6">
+                    {funds.map((fund) => (
+                        <div key={fund.id} className="bg-white border-2 border-slate-50 p-10 rounded-[3rem] flex justify-between items-center hover:shadow-xl hover:shadow-emerald-900/5 transition-all group active:scale-[0.99] cursor-pointer">
+                            <div className="flex gap-8 items-center">
+                                <div className="w-20 h-20 bg-emerald-50 rounded-3xl flex items-center justify-center text-4xl font-black text-emerald-500 group-hover:scale-110 transition-transform shadow-inner">
+                                    {fund.fundCode.charAt(3)}
+                                </div>
+                                <div>
+                                    <h3 className="text-xl font-bold">{fund.fundName}</h3>
+                                    <p className="text-xs text-slate-500 font-mono">{fund.fundCode} • <span className="text-rose-400">{fund.type}</span></p>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-10">
+                                <div className="text-right">
+                                    <p className="text-[10px] text-slate-500 font-black uppercase mb-1">Market Price (NAV)</p>
+                                    <p className="text-3xl font-mono font-black text-emerald-400 tracking-tighter">{fund.nav.toFixed(4)}</p>
+                                </div>
+                                <button 
+                                    onClick={() => checkSuspension() ? null : (setSelectedFund(fund), setShowBuyModal(true))}
+                                    className="bg-white text-slate-900 px-8 py-4 rounded-2xl font-black text-sm uppercase tracking-widest hover:bg-emerald-400 transition-all active:scale-95"
+                                >
+                                    Invest
+                                </button>
+                            </div>
+                        </div>
+                    ))}
+                </main>
+            </div>
 
             {showBuyModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
-                    <div className="bg-slate-900 border border-white/10 p-10 rounded-[3rem] w-full max-w-md shadow-2xl">
-                        <h2 className="text-2xl font-black mb-2">Confirm Investment</h2>
-                        <p className="text-slate-400 text-sm mb-8 uppercase tracking-widest font-bold">Fund: {selectedFund?.fundCode}</p>
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md">
+                    <div className="bg-white p-10 rounded-[3rem] w-full max-w-md shadow-2xl">
+                        <h2 className="text-3xl font-black mb-1 text-slate-900 tracking-tighter uppercase">Invest Now</h2>
+                        <p className="text-emerald-600 text-xs font-black uppercase tracking-widest mb-10">Fund: {selectedFund?.fundCode}</p>
                         
-                        <div className="space-y-6">
+                        <div className="space-y-6 text-slate-800">
                             <div>
-                                <label className="text-[10px] font-black text-slate-500 uppercase ml-2 mb-2 block">Select Source Pocket</label>
+                                <label className="text-[10px] font-black text-slate-400 uppercase ml-2 mb-2 block tracking-[0.2em]">Source Pocket</label>
                                 <select 
-                                    className="w-full bg-slate-800 border border-white/5 p-4 rounded-2xl outline-none focus:border-emerald-500 font-bold"
+                                    className="w-full bg-slate-50 border-2 border-slate-100 p-5 rounded-[1.5rem] outline-none focus:border-emerald-500/20 font-bold transition-all"
                                     value={sourceId}
                                     onChange={(e) => setSourceId(e.target.value)}
                                 >
@@ -182,41 +183,29 @@ const Investment = () => {
                             </div>
 
                             <div>
-                                <label className="text-[10px] font-black text-slate-500 uppercase ml-2 mb-2 block">Amount (THB)</label>
+                                <label className="text-[10px] font-black text-slate-400 uppercase ml-2 mb-2 block tracking-[0.2em]">Investment Amount (THB)</label>
                                 <input 
                                     type="number" 
-                                    className="w-full bg-slate-800 border border-white/5 p-4 rounded-2xl outline-none focus:border-emerald-500 text-2xl font-black"
+                                    className="w-full bg-slate-50 border-2 border-slate-100 p-5 rounded-[1.5rem] outline-none focus:border-emerald-500/20 text-3xl font-black text-emerald-600 transition-all placeholder:text-slate-200"
                                     placeholder="0.00"
                                     value={buyAmount}
                                     onChange={(e) => setBuyAmount(e.target.value)}
                                 />
                                 {buyAmount && selectedFund && (
-                                    <p className="mt-3 text-xs text-emerald-400 font-bold ml-2">
-                                        You will get ≈ {(parseFloat(buyAmount) / selectedFund.nav).toFixed(4)} Units
+                                    <p className="mt-4 text-[11px] text-emerald-500 font-bold ml-2 italic">
+                                        Expected Units ≈ {(parseFloat(buyAmount) / selectedFund.nav).toFixed(4)}
                                     </p>
                                 )}
                             </div>
 
-                            <div className="flex gap-4 pt-4">
-                                <button onClick={() => setShowBuyModal(false)} className="flex-1 py-4 font-bold text-slate-400">Cancel</button>
-                                <button onClick={() => requestPin(handleConfirmBuy)} className="flex-1 py-4 bg-emerald-500 text-slate-950 font-black rounded-2xl shadow-lg shadow-emerald-500/20">Confirm</button>
+                            <div className="flex gap-4 pt-6">
+                                <button onClick={() => setShowBuyModal(false)} className="flex-1 py-4 font-black text-slate-400 uppercase tracking-widest text-[11px] hover:text-slate-600 transition-all">Cancel</button>
+                                <button onClick={() => requestPin(handleConfirmBuy)} className="flex-1 py-4 bg-slate-900 text-white font-black rounded-2xl shadow-xl shadow-slate-900/10 uppercase tracking-[0.2em] text-[11px] active:scale-95 transition-all">Confirm</button>
                             </div>
                         </div>
                     </div>
                 </div>
             )}
-            <StatusNotification 
-                isOpen={isStatusModalOpen} 
-                onClose={() => {
-                    setIsStatusModalOpen(false);
-                    if (user?.status?.toUpperCase() === 'BANNED' || user?.status?.toUpperCase() === 'BAN') {
-                        localStorage.removeItem('user');
-                        navigate('/login');
-                    }
-                }} 
-                status={user?.status} 
-            />
-
             <PinModal 
                 isOpen={isPinModalOpen}
                 onClose={() => setIsPinModalOpen(false)}

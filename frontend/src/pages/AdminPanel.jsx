@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import api from '../utils/axios';
 
 const AdminPanel = () => {
     const navigate = useNavigate();
@@ -13,18 +14,12 @@ const AdminPanel = () => {
     const handleSubmit = async (e) => {
         e.preventDefault();
         try {
-            const res = await fetch('http://localhost:8080/api/funds/add', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    ...fundData,
-                    nav: parseFloat(fundData.nav) // แปลงตัวเลขก่อนส่ง
-                })
+            await api.post('/funds/add', {
+                ...fundData,
+                nav: parseFloat(fundData.nav) // แปลงตัวเลขก่อนส่ง
             });
-            if (res.ok) {
-                alert("เพิ่มกองทุนสำเร็จแล้วโบร!");
-                setFundData({ fundCode: '', fundName: '', nav: '', type: 'Low Risk' });
-            }
+            alert("เพิ่มกองทุนสำเร็จแล้วโบร!");
+            setFundData({ fundCode: '', fundName: '', nav: '', type: 'Low Risk' });
         } catch (err) {
             console.error(err);
             alert("พังน้าโบร เช็ค Backend ด่วน!");

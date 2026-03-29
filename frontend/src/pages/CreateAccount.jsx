@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { QRCodeCanvas } from 'qrcode.react';
 import html2canvas from 'html2canvas';
+import api from '../utils/axios';
 
 const CreateAccount = () => {
     const navigate = useNavigate();
@@ -45,16 +46,14 @@ const CreateAccount = () => {
     const [isProcessing, setIsProcessing] = useState(false);
 
     const fetchAccounts = (userId) => {
-        fetch(`http://localhost:8080/api/accounts/user/${userId}`)
-            .then(res => res.json())
-            .then(data => setAccounts(data))
+        api.get(`/accounts/user/${userId}`)
+            .then(res => setAccounts(res.data))
             .catch(err => console.error(err));
     };
 
     const fetchFavorites = (userId) => {
-        fetch(`http://localhost:8080/api/favorites/user/${userId}`)
-            .then(res => res.json())
-            .then(data => setFavorites(data))
+        api.get(`/favorites/user/${userId}`)
+            .then(res => setFavorites(res.data))
             .catch(err => console.error(err));
     };
 
@@ -69,9 +68,9 @@ const CreateAccount = () => {
 
     useEffect(() => {
         if (destAccountNumber.length === 10) {
-            fetch(`http://localhost:8080/api/accounts/search?accountNumber=${destAccountNumber}`)
-                .then(res => res.json())
-                .then(data => {
+            api.get(`/accounts/search?accountNumber=${destAccountNumber}`)
+                .then(res => {
+                    const data = res.data;
                     setDestAccountName(`${data.user.firstName} ${data.user.lastName} (${data.accountName})`);
                     setDestId(data.id);
                 })
@@ -115,48 +114,66 @@ const CreateAccount = () => {
     const handleDeleteAccount = async (accountId, balance) => {
         if (Number(balance) > 0) { alert("ย้ายเงินออกให้หมดก่อนลบนะโบร!"); return; }
         if (window.confirm("คุณแน่ใจใช่ไหมที่จะลบกระเป๋านี้?")) {
-            const res = await fetch(`http://localhost:8080/api/accounts/${accountId}`, { method: 'DELETE' });
-            if (res.ok) { alert("ลบสำเร็จ!"); fetchAccounts(user.id); }
-            else { alert("ลบไม่สำเร็จ"); }
+            try {
+                await api.delete(`/accounts/${accountId}`);
+                alert("ลบสำเร็จ!");
+                fetchAccounts(user.id);
+            } catch (error) {
+                alert("ลบไม่สำเร็จ");
+            }
         }
     };
 
     const submitCreateAccount = async () => {
         if (!newAccountName.trim()) return;
         const goalValue = parseFloat(newAccountGoal) || 0;
-        const res = await fetch(`http://localhost:8080/api/accounts/user/${user.id}/create`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ accountName: newAccountName, savingsGoal: goalValue })
-        });
-        if (res.ok) { fetchAccounts(user.id); setShowCreateModal(false); setNewAccountName(''); setNewAccountGoal(''); }
+        try {
+            await api.post(`/accounts/user/${user.id}/create`, {
+                accountName: newAccountName,
+                savingsGoal: goalValue
+            });
+            fetchAccounts(user.id);
+            setShowCreateModal(false);
+            setNewAccountName('');
+            setNewAccountGoal('');
+        } catch (error) {
+            console.error(error);
+        }
     };
 
     const handleAddFavorite = async () => {
         const nickname = prompt("ตั้งชื่อเล่นสำหรับบัญชีนี้:");
         if (!nickname) return;
-        await fetch('http://localhost:8080/api/favorites/add', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userId: user.id, nickname, accountNumber: slipData.toAccount, ownerName: slipData.toName })
-        });
-        alert("บันทึกแล้ว!"); fetchFavorites(user.id);
+        try {
+            await api.post('/favorites/add', {
+                userId: user.id,
+                nickname,
+                accountNumber: slipData.toAccount,
+                ownerName: slipData.toName
+            });
+            alert("บันทึกแล้ว!");
+            fetchFavorites(user.id);
+        } catch (error) {
+            console.error(error);
+        }
     };
 
     const handleTransfer = async () => {
         if (!sourceId || !destId || !transferAmount) return;
         setIsProcessing(true);
-        const res = await fetch('http://localhost:8080/api/transactions/transfer', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sourceAccountId: sourceId, destinationAccountId: destId, amount: transferAmount })
-        });
-        const data = await res.json();
-        if (res.ok) { 
-            setSlipData({ ...data, date: new Date().toLocaleString('th-TH') }); 
-            setShowSlipModal(true); 
-            fetchAccounts(user.id); 
-            setShowTransferModal(false); 
+        try {
+            const res = await api.post('/transactions/transfer', {
+                sourceAccountId: sourceId,
+                destinationAccountId: destId,
+                amount: transferAmount
+            });
+            const data = res.data;
+            setSlipData({ ...data, date: new Date().toLocaleString('th-TH') });
+            setShowSlipModal(true);
+            fetchAccounts(user.id);
+            setShowTransferModal(false);
+        } catch (error) {
+            console.error(error);
         }
         setIsProcessing(false);
     };
@@ -164,24 +181,34 @@ const CreateAccount = () => {
     const handleWithdraw = async () => {
         if (!withdrawAccountId || !withdrawAmount) return;
         setIsProcessing(true);
-        const res = await fetch('http://localhost:8080/api/transactions/withdraw', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ accountId: withdrawAccountId, amount: Number(withdrawAmount) })
-        });
-        if (res.ok) { alert("ถอนเงินสำเร็จ!"); fetchAccounts(user.id); setShowWithdrawModal(false); }
-        else { alert("ยอดเงินไม่พอ"); }
+        try {
+            await api.post('/transactions/withdraw', {
+                accountId: withdrawAccountId,
+                amount: Number(withdrawAmount)
+            });
+            alert("ถอนเงินสำเร็จ!");
+            fetchAccounts(user.id);
+            setShowWithdrawModal(false);
+        } catch (error) {
+            alert("ยอดเงินไม่พอ");
+        }
         setIsProcessing(false);
     };
 
     const handleMoveMoney = async () => {
         if (!moveSourceAcc || !moveDestId || !moveAmount) return;
-        const res = await fetch('http://localhost:8080/api/transactions/move-money', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sourceAccountId: moveSourceAcc.id, destinationAccountId: moveDestId, amount: moveAmount })
-        });
-        if (res.ok) { alert("ย้ายเงินสำเร็จ!"); fetchAccounts(user.id); setShowMoveModal(false); }
+        try {
+            await api.post('/transactions/move-money', {
+                sourceAccountId: moveSourceAcc.id,
+                destinationAccountId: moveDestId,
+                amount: moveAmount
+            });
+            alert("ย้ายเงินสำเร็จ!");
+            fetchAccounts(user.id);
+            setShowMoveModal(false);
+        } catch (error) {
+            console.error(error);
+        }
     };
 
     if (!user) return null;

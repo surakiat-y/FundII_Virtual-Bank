@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import api from '../utils/axios';
 
 /**
  * PinModal Component
@@ -81,20 +82,12 @@ const PinModal = ({ isOpen, onClose, onSuccess, mode = 'VERIFY', userId }) => {
     const callSetupPin = async (finalPin) => {
         setLoading(true);
         try {
-            const response = await fetch('http://localhost:8080/api/security/setup-pin', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ userId, pin: finalPin })
-            });
-            const data = await response.json();
-            if (response.ok) {
-                onSuccess();
-                onClose();
-            } else {
-                setError(data.error || 'Failed to set PIN');
-            }
+            await api.post('/security/setup-pin', { userId, pin: finalPin });
+            onSuccess();
+            onClose();
         } catch (err) {
-            setError('Connection error');
+            const data = err.response?.data || {};
+            setError(data.error || 'Failed to set PIN');
         } finally {
             setLoading(false);
         }
@@ -103,22 +96,14 @@ const PinModal = ({ isOpen, onClose, onSuccess, mode = 'VERIFY', userId }) => {
     const callVerifyPin = async (finalPin) => {
         setLoading(true);
         try {
-            const response = await fetch('http://localhost:8080/api/security/verify-pin', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ userId, pin: finalPin })
-            });
-            const data = await response.json();
-            if (response.ok) {
-                onSuccess();
-                onClose();
-            } else {
-                setError(data.error || 'Invalid PIN');
-                setPin(['', '', '', '']);
-                setTimeout(() => inputRefs[0].current.focus(), 100);
-            }
+            await api.post('/security/verify-pin', { userId, pin: finalPin });
+            onSuccess();
+            onClose();
         } catch (err) {
-            setError('Connection error');
+            const data = err.response?.data || {};
+            setError(data.error || 'Invalid PIN');
+            setPin(['', '', '', '']);
+            setTimeout(() => inputRefs[0].current.focus(), 100);
         } finally {
             setLoading(false);
         }

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import WelcomeLayout from '../components/WelcomeLayout';
 import StatusNotification from '../components/StatusNotification';
+import api from '../utils/axios';
 
 
 const Login = () => {
@@ -20,35 +21,29 @@ const Login = () => {
         setErrorMsg(''); // ล้าง Error เก่า
 
         try {
-            const response = await fetch('http://localhost:8080/api/auth/login', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username, password })
-            });
+            const response = await api.post('/auth/login', { username, password });
+            const data = response.data;
 
-            const data = await response.json();
-
-            if (response.ok) {
-                // ถ้า Login ผ่าน ให้เก็บข้อมูลลง LocalStorage เครื่องผู้ใช้
-                localStorage.setItem('user', JSON.stringify(data));
-                
-                // เช็ค Role ว่าเป็น Admin หรือ User ธรรมดา
-                if (data.role === 'ADMIN') {
-                    alert('ยินดีต้อนรับ Admin!');
-                    navigate('/admin-dashboard');
-                } else {
-                    alert('เข้าสู่ระบบสำเร็จ!');
-                    navigate('/portal');
-                }
-            } else if (response.status === 403) {
+            // ถ้า Login ผ่าน ให้เก็บข้อมูลลง LocalStorage เครื่องผู้ใช้
+            localStorage.setItem('user', JSON.stringify(data));
+            
+            // เช็ค Role ว่าเป็น Admin หรือ User ธรรมดา
+            if (data.role === 'ADMIN') {
+                alert('ยินดีต้อนรับ Admin!');
+                navigate('/admin-dashboard');
+            } else {
+                alert('เข้าสู่ระบบสำเร็จ!');
+                navigate('/portal');
+            }
+        } catch (error) {
+            if (error.response && error.response.status === 403) {
                 // 🔥 จัดการกรณีบัญชีโดน BAN
                 setIsBannedModalOpen(true);
             } else {
                 // ถ้า Login ไม่ผ่าน โชว์ Error จาก Backend
+                const data = error.response?.data || {};
                 setErrorMsg(data.error || 'Login failed');
             }
-        } catch (error) {
-            setErrorMsg('ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้');
         }
     };
 

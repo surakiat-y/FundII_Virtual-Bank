@@ -138,6 +138,21 @@ public class TransactionController {
         }
     }
 
+    // ✅ 5. ย้ายเงินตัวเอง (Move Money)
+    @PostMapping("/move-money")
+    public ResponseEntity<?> moveMoney(@RequestBody Map<String, Object> request) {
+        try {
+            System.out.println("Move Money Request: " + request);
+            Long sourceId = Long.valueOf(request.get("sourceAccountId").toString());
+            Long destId = Long.valueOf(request.get("destinationAccountId").toString());
+            BigDecimal amount = new BigDecimal(request.get("amount").toString());
+            return ResponseEntity.ok(transactionService.transfer(sourceId, destId, amount));
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
     // 🔥 เพิ่มฟังก์ชันดึงพอร์ตลงทุน
   // 🔥 แก้ไขฟังก์ชันดึงพอร์ตลงทุนให้ดึงติดชัวร์ๆ
     @GetMapping("/portfolio/{userId}")

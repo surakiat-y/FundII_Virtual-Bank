@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import WelcomeLayout from '../components/WelcomeLayout';
+import api from '../utils/axios';
 
 const SignUp = () => {
     const navigate = useNavigate();
@@ -68,28 +69,20 @@ const SignUp = () => {
 
         setIsSubmitting(true);
         try {
-            const response = await fetch('http://localhost:8080/api/auth/register', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    username: formData.username,
-                    password: formData.password,
-                    firstName: formData.firstName,
-                    lastName: formData.lastName
-                })
+            const response = await api.post('/auth/register', {
+                username: formData.username,
+                password: formData.password,
+                firstName: formData.firstName,
+                lastName: formData.lastName
             });
 
-            const data = await response.json();
-
-            if (response.ok) {
-                console.log("Registration Success Response:", data);
-                setGeneratedAccount(data.accountNumber || '');
-                setShowSuccessModal(true);
-            } else {
-                setErrorMsg(data.error || 'การสมัครสมาชิกล้มเหลว');
-            }
+            const data = response.data;
+            console.log("Registration Success Response:", data);
+            setGeneratedAccount(data.accountNumber || '');
+            setShowSuccessModal(true);
         } catch (error) {
-            setErrorMsg('ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้');
+            const data = error.response?.data || {};
+            setErrorMsg(data.error || 'การสมัครสมาชิกล้มเหลว');
         } finally {
             setIsSubmitting(false);
         }
