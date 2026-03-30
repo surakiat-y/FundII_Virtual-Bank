@@ -4,11 +4,15 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.context.annotation.Bean;
+import org.springframework.web.bind.annotation.CrossOrigin;
+import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 @SpringBootApplication
 @EnableScheduling
+@RestController
+@CrossOrigin(origins = {"http://localhost:5173", "https://fundii-frontend.onrender.com"}, allowedHeaders = "*", allowCredentials = "true")
 public class VirtualbankApplication {
 
     public static void main(String[] args) {
@@ -21,11 +25,7 @@ public class VirtualbankApplication {
             @Override
             public void addCorsMappings(CorsRegistry registry) {
                 registry.addMapping("/**")
-                        // ระบุ URL Frontend ของนายลงไปตรงๆ เพื่อแก้ปัญหา Credentials
-                        .allowedOrigins(
-                            "http://localhost:5173",
-                            "https://fundii-frontend.onrender.com"
-                        )
+                        .allowedOrigins("http://localhost:5173", "https://fundii-frontend.onrender.com")
                         .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
                         .allowedHeaders("*")
                         .allowCredentials(true);
