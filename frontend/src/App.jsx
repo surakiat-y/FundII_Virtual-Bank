@@ -16,7 +16,7 @@ function App() {
       <Routes>
         <Route path="/" element={<Welcome />} />
         <Route path="/login" element={<Login />} />
-        <Route path="/signup" element={<SignUp />} />
+        <Route path="/create-account" element={<SignUp />} />
 
         {/* User Protected Routes with Persistent Navbar */}
         <Route element={<UserLayout />}>

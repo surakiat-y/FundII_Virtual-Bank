@@ -30,10 +30,19 @@ public class TransactionService {
     @Autowired
     private FundRepository fundRepository;
 
+    // ✅ Helper Method สำหรับเช็กยอดเงินขั้นต่ำ 0.01
+    private void validateAmount(BigDecimal amount) {
+        if (amount == null || amount.compareTo(new BigDecimal("0.01")) < 0) {
+            throw new RuntimeException("จำนวนเงินต้องไม่น้อยกว่า 0.01 บาท");
+        }
+    }
+
     @Transactional
     public Transaction deposit(Long accountId, BigDecimal amount) {
+        validateAmount(amount); // ดักยอดติดลบ/ศูนย์
         Account account = accountRepository.findById(accountId).orElseThrow();
         validateStatus(account, "บัญชี");
+        
         account.setBalance(account.getBalance().add(amount));
         accountRepository.save(account);
 
@@ -49,10 +58,14 @@ public class TransactionService {
 
     @Transactional
     public Transaction withdraw(Long accountId, BigDecimal amount) {
+        validateAmount(amount); // ดักยอดติดลบ/ศูนย์
         Account account = accountRepository.findById(accountId).orElseThrow();
         validateStatus(account, "บัญชีของคุณ");
         
-        if (account.getBalance().compareTo(amount) < 0) throw new RuntimeException("ยอดเงินไม่เพียงพอ");
+        // เช็กยอดเงินคงเหลือ
+        if (account.getBalance().compareTo(amount) < 0) {
+            throw new RuntimeException("ยอดเงินไม่เพียงพอ (ยอดคงเหลือ: " + account.getBalance() + ")");
+        }
 
         account.setBalance(account.getBalance().subtract(amount));
         accountRepository.save(account);
@@ -69,16 +82,26 @@ public class TransactionService {
 
     @Transactional
     public Transaction transfer(Long sourceId, Long destinationId, BigDecimal amount) {
+        validateAmount(amount); // ดักยอดติดลบ/ศูนย์
+        
+        if (sourceId.equals(destinationId)) {
+            throw new RuntimeException("ไม่สามารถโอนเงินเข้าบัญชีเดียวกันได้");
+        }
+
         Account source = accountRepository.findById(sourceId).orElseThrow();
         Account dest = accountRepository.findById(destinationId).orElseThrow();
         
         validateStatus(source, "บัญชีของคุณ");
         validateStatus(dest, "บัญชีปลายทาง");
 
-        if (source.getBalance().compareTo(amount) < 0) throw new RuntimeException("ยอดเงินไม่เพียงพอ");
+        // เช็กยอดเงินโอน
+        if (source.getBalance().compareTo(amount) < 0) {
+            throw new RuntimeException("ยอดเงินไม่เพียงพอสำหรับการโอน");
+        }
 
         source.setBalance(source.getBalance().subtract(amount));
         dest.setBalance(dest.getBalance().add(amount));
+        
         accountRepository.save(source);
         accountRepository.save(dest);
 
@@ -93,12 +116,8 @@ public class TransactionService {
     }
 
     @Transactional
-    public void transferMoney(Long sourceId, Long destId, BigDecimal amount) {
-        transfer(sourceId, destId, amount);
-    }
-
-    @Transactional
     public void invest(Long accountId, Long fundId, BigDecimal amount) {
+        validateAmount(amount); // ดักยอดติดลบ/ศูนย์
         Account account = accountRepository.findById(accountId).orElseThrow();
         Fund fund = fundRepository.findById(fundId).orElseThrow();
         
@@ -112,11 +131,9 @@ public class TransactionService {
             throw new RuntimeException("ยอดเงินไม่เพียงพอสำหรับการลงทุน");
         }
 
-        // หักเงิน
         account.setBalance(account.getBalance().subtract(amount));
         accountRepository.save(account);
 
-        // คำนวณหน่วยและบันทึกพอร์ต
         Double unitsToBuy = amount.doubleValue() / fund.getNav();
         UserFund userFund = userFundRepository.findByUserIdAndFundId(account.getUser().getId(), fundId)
                 .orElse(new UserFund(account.getUser().getId(), fundId, 0.0, fund.getNav()));
@@ -124,7 +141,6 @@ public class TransactionService {
         userFund.setUnits(userFund.getUnits() + unitsToBuy);
         userFundRepository.save(userFund);
 
-        // บันทึกประวัติ
         Transaction tx = new Transaction();
         tx.setSourceAccount(account);
         tx.setAmount(amount);
@@ -136,6 +152,10 @@ public class TransactionService {
 
     @Transactional
     public void sell(Long accountId, Long fundId, Double unitsToSell) {
+        if (unitsToSell == null || unitsToSell <= 0) {
+            throw new RuntimeException("จำนวนหน่วยที่ขายต้องมากกว่า 0");
+        }
+
         Account account = accountRepository.findById(accountId).orElseThrow();
         Fund fund = fundRepository.findById(fundId).orElseThrow();
         
@@ -145,25 +165,21 @@ public class TransactionService {
                 .orElseThrow(() -> new RuntimeException("คุณไม่มีหน่วยลงทุนในกองทุนนี้"));
 
         if (userFund.getUnits() < unitsToSell) {
-            throw new RuntimeException("หน่วยลงทุนไม่พอขาย");
+            throw new RuntimeException("หน่วยลงทุนไม่พอขาย (คุณมี: " + userFund.getUnits() + " หน่วย)");
         }
 
-        // คำนวณเงินที่จะได้รับ
         BigDecimal moneyReceived = BigDecimal.valueOf(unitsToSell * fund.getNav());
 
-        // หักหน่วยลงทุน
         userFund.setUnits(userFund.getUnits() - unitsToSell);
-        if (userFund.getUnits() <= 0) {
+        if (userFund.getUnits() <= 0.000001) { // เผื่อเศษทศนิยมเล็กน้อย
             userFundRepository.delete(userFund);
         } else {
             userFundRepository.save(userFund);
         }
 
-        // เอาเงินเข้ากระเป๋า
         account.setBalance(account.getBalance().add(moneyReceived));
         accountRepository.save(account);
 
-        // บันทึก Statement
         Transaction tx = new Transaction();
         tx.setSourceAccount(account);
         tx.setAmount(moneyReceived);
@@ -177,12 +193,10 @@ public class TransactionService {
         String userStatus = account.getUser().getStatus();
         String accStatus = account.getStatus();
 
-        // Check for BANNED / BAN
         if ("BANNED".equalsIgnoreCase(userStatus) || "BAN".equalsIgnoreCase(userStatus) || "BANNED".equalsIgnoreCase(accStatus)) {
             throw new RuntimeException(label + "ถูกระงับการใช้งานถาวร (BANNED)");
         }
         
-        // Check for SUSPENDED
         if ("SUSPENDED".equalsIgnoreCase(userStatus) || "SUSPENDED".equalsIgnoreCase(accStatus)) {
             throw new RuntimeException(label + "ถูกระงับการทำธุรกรรมชั่วคราว (SUSPENDED)");
         }
