@@ -21,8 +21,11 @@ public class VirtualbankApplication {
             @Override
             public void addCorsMappings(CorsRegistry registry) {
                 registry.addMapping("/**")
-                        // ใช้ allowedOriginPatterns เพื่อความยืดหยุ่นในการจัดการ URL ของ Render
-                        .allowedOriginPatterns("*") 
+                        // ระบุ URL Frontend ของนายลงไปตรงๆ เพื่อแก้ปัญหา Credentials
+                        .allowedOrigins(
+                            "http://localhost:5173",
+                            "https://fundii-frontend.onrender.com"
+                        )
                         .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
                         .allowedHeaders("*")
                         .allowCredentials(true);
