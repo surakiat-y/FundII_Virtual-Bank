@@ -7,7 +7,6 @@ import AdminDashboard from './pages/AdminDashboard';
 import Statement from './pages/Statement';
 import Investment from './pages/Investment';
 import YourPocket from './pages/YourPocket';
-import AdminPanel from './pages/AdminPanel';
 import UserLayout from './components/UserLayout';
 import './App.css';
 
@@ -17,8 +16,8 @@ function App() {
       <Routes>
         <Route path="/" element={<Welcome />} />
         <Route path="/login" element={<Login />} />
-        <Route path="/create-account" element={<SignUp />} />
-        
+        <Route path="/signup" element={<SignUp />} />
+
         {/* User Protected Routes with Persistent Navbar */}
         <Route element={<UserLayout />}>
           <Route path="/portal" element={<Portal />} />
@@ -27,8 +26,7 @@ function App() {
           <Route path="/your-pocket" element={<YourPocket />} />
         </Route>
 
-        <Route path="/admin-dashboard" element={<AdminDashboard />} />
-        <Route path="/admin" element={<AdminPanel />} />
+        <Route path="/admin" element={<AdminDashboard />} />
       </Routes>
     </Router>
   );

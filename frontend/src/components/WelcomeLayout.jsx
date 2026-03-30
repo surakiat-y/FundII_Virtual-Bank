@@ -12,7 +12,7 @@ const WelcomeLayout = ({ children }) => {
                     className="absolute inset-0 w-full h-full object-cover transition-transform duration-1000 hover:scale-105"
                 />
                 <div className="absolute inset-0 bg-gradient-to-r from-[#064e3b]/40 to-transparent"></div>
-                <div className="absolute bottom-12 left-12 z-10 animate-in fade-in slide-in-from-bottom-10 duration-1000">
+                <div className="absolute bottom-12 left-12 z-10">
                     <div className="bg-white/10 backdrop-blur-md border border-white/20 p-6 rounded-2xl max-w-xs">
                         <p className="text-white/90 text-sm font-medium leading-relaxed">
                             "The best way to predict your future is to create it, one transaction at a time."

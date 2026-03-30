@@ -90,7 +90,7 @@ const SignUp = () => {
 
     return (
         <WelcomeLayout>
-            <div className="w-full max-w-[480px] animate-in fade-in slide-in-from-right-10 duration-700">
+            <div className="w-full max-w-[480px]">
                 <div className="mb-8">
                     <button
                         onClick={() => navigate('/')}
@@ -111,7 +111,7 @@ const SignUp = () => {
                 </div>
 
                 {errorMsg && (
-                    <div className="mb-6 p-4 bg-red-50 border border-red-200 text-red-600 rounded-2xl text-sm font-medium animate-in fade-in zoom-in-95 duration-300">
+                    <div className="mb-6 p-4 bg-red-50 border border-red-200 text-red-600 rounded-2xl text-sm font-medium">
                         {errorMsg}
                     </div>
                 )}
@@ -226,7 +226,7 @@ const SignUp = () => {
             {/* 🎉 Success Modal */}
             {showSuccessModal && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md">
-                    <div className="bg-white rounded-[3rem] p-10 max-w-md w-full relative z-[101] shadow-[0_32px_64px_-16px_rgba(0,0,0,0.2)] animate-in zoom-in-95 fade-in duration-300 text-center font-sans">
+                    <div className="bg-white rounded-[3rem] p-10 max-w-md w-full relative z-[101] shadow-[0_32px_64px_-16px_rgba(0,0,0,0.2)] text-center font-sans">
                         {/* Status Icon */}
                         <div className="w-24 h-24 bg-emerald-50 rounded-full flex items-center justify-center mx-auto mb-8 ring-8 ring-emerald-50/50">
                             <svg className="w-12 h-12 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">

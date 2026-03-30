@@ -10,7 +10,7 @@ const UserLayout = () => {
 
     const handleLogout = () => {
         localStorage.removeItem('user');
-        navigate('/login');
+        navigate('/');
     };
 
     useEffect(() => {

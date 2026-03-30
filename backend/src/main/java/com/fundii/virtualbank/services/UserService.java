@@ -22,17 +22,18 @@ public class UserService {
     @Autowired
     private AccountRepository accountRepository; // เพิ่ม Repository ของบัญชี
 
-    @Transactional // ถ้าสร้าง User สำเร็จแต่สร้าง Account พลาด ระบบจะ Rollback ให้ (ไม่สมัคร User ให้)
+    @Transactional // ถ้าสร้าง User สำเร็จแต่สร้าง Account พลาด ระบบจะ Rollback ให้ (ไม่สมัคร User
+                   // ให้)
     public Map<String, Object> registerUser(User user) {
         // 1. เช็คความยาวอย่างน้อย 8 ตัวอักษร
         if (user.getPassword() == null || user.getPassword().length() < 8) {
-            throw new RuntimeException("พาสเวิร์ดต้องมีความยาวอย่างน้อย 8 ตัวอักษร");
+            throw new RuntimeException("Password must be at least 8 characters long.");
         }
 
         // 2. เช็คว่ามี Username นี้ซ้ำในระบบหรือยัง
         Optional<User> existingUser = userRepository.findByUsername(user.getUsername());
         if (existingUser.isPresent()) {
-            throw new RuntimeException("Username นี้มีคนใช้แล้วครับ!");
+            throw new RuntimeException("This username is already taken!");
         }
 
         // 2. ตั้งค่าเริ่มต้นให้ User
@@ -62,19 +63,5 @@ public class UserService {
         result.put("accountNumber", accNum);
 
         return result;
-    }
-
-    @Transactional
-    public void updatePin(Long userId, String newPin) {
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new RuntimeException("ไม่พบผู้ใช้งาน!"));
-        user.setPin(newPin);
-        userRepository.save(user);
-    }
-
-    public boolean verifyPin(Long userId, String pin) {
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new RuntimeException("ไม่พบผู้ใช้งาน!"));
-        return pin != null && pin.equals(user.getPin());
     }
 }

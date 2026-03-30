@@ -33,6 +33,14 @@ const YourPocket = () => {
             .catch(err => console.error(err));
     };
 
+    const checkSuspension = () => {
+        if (user?.status?.toUpperCase() === 'SUSPENDED' || user?.status?.toUpperCase() === 'BANNED') {
+            setIsStatusModalOpen(true);
+            return true;
+        }
+        return false;
+    };
+
 
     useEffect(() => {
         const loggedInUser = localStorage.getItem('user');
@@ -44,6 +52,7 @@ const YourPocket = () => {
     }, [navigate]);
 
     const submitCreateAccount = async () => {
+        if (checkSuspension()) return;
         if (!newAccountName.trim()) return;
         try {
             const res = await api.post(`/accounts/user/${user.id}/create`, {
@@ -55,7 +64,7 @@ const YourPocket = () => {
             setShowCreateModal(false);
             setNewAccountName('');
             setNewAccountGoal('');
-            
+
             setSuccessAccount(newAcc);
             setShowSuccessModal(true);
         } catch (error) {
@@ -64,13 +73,14 @@ const YourPocket = () => {
         }
     };
 
-    const handleShowQR = (account) => { 
-        setQRValue(account.accountNumber); 
-        setSelectedAccForQR(account); 
-        setShowQRModal(true); 
+    const handleShowQR = (account) => {
+        setQRValue(account.accountNumber);
+        setSelectedAccForQR(account);
+        setShowQRModal(true);
     };
 
     const handleMoveMoney = async () => {
+        if (checkSuspension()) return;
         if (!moveSourceAcc || !moveDestId || !moveAmount) return;
         try {
             await api.post('/transactions/transfer', {
@@ -90,7 +100,7 @@ const YourPocket = () => {
     };
 
     const toggleVisibility = (accId) => {
-        setVisibleAccountIds(prev => 
+        setVisibleAccountIds(prev =>
             prev.includes(accId) ? prev.filter(id => id !== accId) : [...prev, accId]
         );
     };
@@ -98,6 +108,7 @@ const YourPocket = () => {
     const maskNumber = (num) => `*******${num.slice(-3)}`;
 
     const handleDeleteAccount = async (accountId, balance) => {
+        if (checkSuspension()) return;
         if (Number(balance) > 0) { alert("ย้ายเงินออกให้หมดก่อนลบนะโบร!"); return; }
         if (window.confirm("คุณแน่ใจใช่ไหมที่จะลบกระเป๋านี้?")) {
             try {
@@ -113,10 +124,10 @@ const YourPocket = () => {
     return (
         <LoadingGuard isLoading={isLoading} user={user} isStatusModalOpen={isStatusModalOpen} onCloseModal={() => setIsStatusModalOpen(false)}>
             <div className="min-h-screen bg-slate-50 text-slate-900 font-sans">
-                
-                <div className="animate-slideInRight">
+
+                <div>
                     <main className="max-w-6xl mx-auto p-10">
-                        
+
                         {accounts.filter(acc => acc.accountName === 'Main Account' || acc.accountName === 'MAIN ACCOUNT').map(acc => (
                             <div key={acc.id} className="bg-gradient-to-br from-[#065f46] to-[#042f2e] text-white rounded-[2.5rem] p-4 shadow-2xl shadow-emerald-900/20 mb-12 relative overflow-hidden group transition-all border border-white/10">
                                 <div className="flex flex-col md:flex-row justify-between items-center gap-8 relative z-10 px-6 py-0.5">
@@ -132,7 +143,7 @@ const YourPocket = () => {
                                                 <p className="text-emerald-100/60 font-bold text-[11px] tracking-widest">
                                                     Bank Account: {visibleAccountIds.includes(acc.id) ? acc.accountNumber : maskNumber(acc.accountNumber)}
                                                 </p>
-                                                <button 
+                                                <button
                                                     onClick={() => toggleVisibility(acc.id)}
                                                     className="text-white/40 hover:text-white transition-colors"
                                                 >
@@ -166,13 +177,13 @@ const YourPocket = () => {
 
                         <div className="flex justify-between items-center mb-10 mt-12">
                             <div className="flex items-center gap-4">
-                                <h1 className="text-4xl font-black tracking-tighter text-slate-900">Your Pockets</h1>
+                                <h1 className="text-4xl font-black tracking-tighter text-slate-900">My Pockets</h1>
                                 <span className="text-[10px] font-black bg-slate-100 text-slate-400 px-3 py-1 rounded-full border border-slate-200/50">
                                     {accounts.filter(acc => acc.accountName !== 'Main Account' && acc.accountName !== 'MAIN ACCOUNT').length} Total
                                 </span>
                             </div>
-                            <button 
-                                onClick={() => setShowCreateModal(true)}
+                            <button
+                                onClick={() => checkSuspension() ? null : setShowCreateModal(true)}
                                 className="bg-[#065f46] text-white px-8 py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-emerald-900/10 active:scale-95 transition-all flex items-center gap-3"
                             >
                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -204,7 +215,7 @@ const YourPocket = () => {
                                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
                                                             </svg>
                                                         </button>
-                                                        <button 
+                                                        <button
                                                             onClick={() => toggleVisibility(acc.id)}
                                                             className="bg-slate-50 text-slate-400 p-2.5 rounded-xl hover:bg-emerald-50 hover:text-emerald-600 shadow-sm transition-all border border-slate-100"
                                                         >
@@ -218,26 +229,26 @@ const YourPocket = () => {
                                                         </button>
                                                     </div>
                                                 </div>
-                                                
+
                                                 <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest mb-1 font-display">Pocket Balance</p>
                                                 <h3 className="text-4xl font-black text-slate-800 mb-8 tracking-tighter">฿{balance.toLocaleString()}</h3>
                                             </div>
-                                            
+
                                             <div className="pt-6 border-t border-slate-50 space-y-4">
                                                 <div className="flex justify-between items-end">
                                                     <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest font-display">Savings Goal</p>
                                                     <p className="text-[10px] font-black text-emerald-600 uppercase font-display">{goal > 0 ? `${percentage.toFixed(0)}%` : '0%'}</p>
                                                 </div>
                                                 <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                                                    <div 
-                                                        className="h-full bg-emerald-500 rounded-full transition-all duration-1000" 
+                                                    <div
+                                                        className="h-full bg-emerald-500 rounded-full transition-all duration-1000"
                                                         style={{ width: `${percentage}%` }}
                                                     ></div>
                                                 </div>
-                                                
+
                                                 <div className="flex justify-between items-center pt-2 gap-3">
-                                                    <button onClick={() => { setMoveSourceAcc(acc); setShowMoveModal(true); }} className="flex-1 bg-emerald-50 text-emerald-600 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-emerald-100 transition-all border border-emerald-100/50 active:scale-95 shadow-sm">Move Money</button>
-                                                    <button onClick={() => handleDeleteAccount(acc.id, acc.balance)} className="bg-rose-50 text-rose-500 p-4 rounded-2xl hover:bg-rose-100 transition-all border border-rose-100/50 active:scale-95 shadow-sm">
+                                                    <button onClick={() => checkSuspension() ? null : (setMoveSourceAcc(acc), setShowMoveModal(true))} className="flex-1 bg-emerald-50 text-emerald-600 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-emerald-100 transition-all border border-emerald-100/50 active:scale-95 shadow-sm">Move Money</button>
+                                                    <button onClick={() => checkSuspension() ? null : handleDeleteAccount(acc.id, acc.balance)} className="bg-rose-50 text-rose-500 p-4 rounded-2xl hover:bg-rose-100 transition-all border border-rose-100/50 active:scale-95 shadow-sm">
                                                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                                                         </svg>
@@ -249,7 +260,7 @@ const YourPocket = () => {
                                 })}
                             </div>
                         ) : (
-                            <div 
+                            <div
                                 onClick={() => setShowCreateModal(true)}
                                 className="w-full py-20 border-2 border-dashed border-slate-200 rounded-[3rem] flex flex-col items-center justify-center gap-6 hover:border-emerald-500/50 hover:bg-emerald-50/50 transition-all cursor-pointer group mb-10"
                             >
@@ -303,7 +314,10 @@ const YourPocket = () => {
                             <div className="space-y-6">
                                 <select value={moveDestId} onChange={(e) => setMoveDestId(e.target.value)} className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-6 py-4 font-bold outline-none">
                                     <option value="">To pocket</option>
-                                    {accounts.filter(a => a.id !== moveSourceAcc?.id).map(a => <option key={a.id} value={a.id}>{a.accountName} (฿{a.balance.toLocaleString()})</option>)}
+                                    {accounts
+                                        .filter(a => a.id !== moveSourceAcc?.id)
+                                        .filter(a => a.status !== 'SUSPENDED' && a.status !== 'BANNED' && a.status !== 'BAN')
+                                        .map(a => <option key={a.id} value={a.id}>{a.accountName} (฿{a.balance.toLocaleString()})</option>)}
                                 </select>
                                 <input type="number" placeholder="Amount" value={moveAmount} onChange={(e) => setMoveAmount(e.target.value)} className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-6 py-4 font-black text-2xl outline-none" />
                                 <button onClick={handleMoveMoney} className="w-full py-5 rounded-2xl font-black text-white bg-[#065f46] shadow-xl active:scale-95 transition-all">Confirm Move</button>
@@ -313,11 +327,11 @@ const YourPocket = () => {
                     </div>
                 )}
 
-                <CreateFunction 
-                    isOpen={showSuccessModal} 
-                    onClose={() => setShowSuccessModal(false)} 
-                    name={successAccount?.accountName} 
-                    accountNumber={successAccount?.accountNumber} 
+                <CreateFunction
+                    isOpen={showSuccessModal}
+                    onClose={() => setShowSuccessModal(false)}
+                    name={successAccount?.accountName}
+                    accountNumber={successAccount?.accountNumber}
                 />
             </div>
         </LoadingGuard>

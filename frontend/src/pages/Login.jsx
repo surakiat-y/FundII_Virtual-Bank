@@ -29,10 +29,8 @@ const Login = () => {
             
             // เช็ค Role ว่าเป็น Admin หรือ User ธรรมดา
             if (data.role === 'ADMIN') {
-                alert('ยินดีต้อนรับ Admin!');
-                navigate('/admin-dashboard');
+                navigate('/admin');
             } else {
-                alert('เข้าสู่ระบบสำเร็จ!');
                 navigate('/portal');
             }
         } catch (error) {
@@ -49,7 +47,7 @@ const Login = () => {
 
     return (
         <WelcomeLayout>
-            <div className="w-full max-w-[480px] animate-in fade-in slide-in-from-right-10 duration-700">
+            <div className="w-full max-w-[480px]">
                 <div className="mb-10">
                     <button
                         onClick={() => navigate('/')}
@@ -99,11 +97,6 @@ const Login = () => {
                         />
                     </div>
 
-                    <div className="flex justify-end mt-1">
-                        <a href="#" className="text-[11px] font-bold text-emerald-700 hover:text-emerald-800 uppercase tracking-wider transition-colors">
-                            Forgot Password?
-                        </a>
-                    </div>
 
                     <button
                         type="submit"

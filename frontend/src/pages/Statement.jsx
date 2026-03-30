@@ -11,10 +11,10 @@ const Statement = () => {
     const [selectedAccountId, setSelectedAccountId] = useState('');
     const [transactions, setTransactions] = useState([]);
     
-    // ─── States สำหรับการดูสลิป ───
     const [showSlipModal, setShowSlipModal] = useState(false);
     const [slipData, setSlipData] = useState(null);
     const [isStatusModalOpen, setIsStatusModalOpen] = useState(false);
+    const [isLoading, setIsLoading] = useState(true);
 
     useEffect(() => {
         const loggedInUser = localStorage.getItem('user');
@@ -32,6 +32,17 @@ const Statement = () => {
                 }
             })
             .catch(err => console.error(err));
+
+        // Security check
+        api.get(`/auth/status/${userData.id}`)
+            .then(res => {
+                const { status } = res.data;
+                if (status === 'BANNED' || status === 'SUSPENDED') {
+                    setIsStatusModalOpen(true);
+                }
+                setIsLoading(false);
+            })
+            .catch(() => setIsLoading(false));
     }, [navigate]);
 
     const fetchTransactions = (accountId) => {
@@ -44,8 +55,7 @@ const Statement = () => {
             .catch(err => console.error(err));
     };
 
-    const handleAccountChange = (e) => {
-        const id = e.target.value;
+    const handleAccountSelect = (id) => {
         setSelectedAccountId(id);
         fetchTransactions(id);
     };
@@ -68,141 +78,188 @@ const Statement = () => {
         setShowSlipModal(true);
     };
 
-    // No blocking loader here as per user request (Instant Access from Portal)
+    // Helper to group transactions by date
+    const groupTransactions = (txs) => {
+        const groups = {};
+        txs.forEach(tx => {
+            const date = new Date(tx.transactionDate).toLocaleDateString('en-US', { 
+                day: 'numeric', 
+                month: 'long', 
+                year: 'numeric' 
+            });
+            if (!groups[date]) groups[date] = [];
+            groups[date].push(tx);
+        });
+        return groups;
+    };
+
+    const groupedTransactions = groupTransactions(transactions);
 
     return (
-        <div className="min-h-screen bg-slate-50 font-sans pb-20 text-slate-800">
-            <div className="animate-slideInRight">
-                <main className="max-w-4xl mx-auto p-6">
-                    <div className="flex flex-col md:flex-row justify-between items-center mb-12 gap-6">
-                        <div className="flex items-center gap-4">
-                            <h2 className="text-4xl font-black text-slate-900 tracking-tighter">History</h2>
-                            <span className="text-[10px] font-black bg-slate-100 text-slate-400 px-3 py-1 rounded-full border border-slate-200/50">{transactions.length} Total</span>
-                        </div>
-                        <div className="w-full md:w-auto">
-                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] block mb-3">Filter by Account</label>
-                            <select 
-                                value={selectedAccountId} 
-                                onChange={handleAccountChange}
-                                className="w-full md:w-64 bg-white border-2 border-slate-100 rounded-[1.25rem] px-6 py-4 font-bold text-slate-700 outline-none shadow-sm focus:border-emerald-500/20 transition-all cursor-pointer"
-                            >
-                                {accounts.map(acc => (
-                                    <option key={acc.id} value={acc.id}>{acc.accountName} (****{acc.accountNumber.slice(-4)})</option>
-                                ))}
-                            </select>
-                        </div>
-                    </div>
+        <div className="min-h-screen bg-slate-50 font-sans pb-24 text-slate-800">
+            <div className="max-w-5xl mx-auto px-6">
+                <header className="pt-16 mb-12 px-2">
+                    <h1 className="text-4xl font-black text-slate-900 tracking-tighter">Statement</h1>
+                </header>
 
-                    {/* List Items */}
-                    <div className="space-y-4">
-                        {transactions.length === 0 ? (
-                            <div className="text-center py-24 bg-white rounded-[2.5rem] border-2 border-dashed border-slate-100 text-slate-300 font-bold uppercase tracking-widest text-xs">
-                                No movements in this pocket.
+                {/* Account Selection Grid/Carousel */}
+                <div className="mb-12">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-4 block">Select Account</label>
+                    <div className="flex gap-4 overflow-x-auto pb-4 no-scrollbar">
+                        {accounts.map(acc => {
+                            const isSelected = Number(selectedAccountId) === acc.id;
+                            return (
+                                <button 
+                                    key={acc.id}
+                                    onClick={() => handleAccountSelect(acc.id)}
+                                    className={`flex-shrink-0 w-56 p-6 rounded-[2rem] border-2 transition-all text-left ${
+                                        isSelected 
+                                        ? 'bg-emerald-600 border-emerald-600 shadow-lg shadow-emerald-900/10 text-white' 
+                                        : 'bg-white border-slate-100 hover:border-slate-200 text-slate-900'
+                                    }`}
+                                >
+                                    <p className={`text-[9px] font-black uppercase tracking-widest mb-1 ${isSelected ? 'text-emerald-100/60' : 'text-slate-300'}`}>
+                                        ****{acc.accountNumber.slice(-4)}
+                                    </p>
+                                    <h3 className="text-sm font-black tracking-tight truncate leading-tight mb-3">
+                                        {acc.accountName}
+                                    </h3>
+                                    <p className={`font-black text-lg ${isSelected ? 'text-white' : 'text-emerald-600'}`}>
+                                        ฿{acc.balance.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                    </p>
+                                </button>
+                            );
+                        })}
+                    </div>
+                </div>
+
+                {/* Grouped Transaction List */}
+                <div className="space-y-12">
+                    {Object.keys(groupedTransactions).length === 0 ? (
+                        <div className="text-center py-24 bg-white rounded-[2.5rem] border border-slate-100">
+                            <p className="text-slate-300 text-xs font-black uppercase tracking-widest italic">No activity yet.</p>
+                        </div>
+                    ) : (
+                        Object.keys(groupedTransactions).map(date => (
+                            <div key={date}>
+                                <h3 className="text-[10px] font-black text-slate-300 uppercase tracking-[0.2em] ml-2 mb-4 pr-10 border-b border-slate-100 inline-block pb-1">{date}</h3>
+                                <div className="space-y-3">
+                                    {groupedTransactions[date].map(tx => {
+                                        const accountId = Number(selectedAccountId);
+                                        const isSource = tx.sourceAccount?.id === accountId;
+                                        const isDest = tx.destinationAccount?.id === accountId;
+                                        
+                                        // Improved income/expense logic
+                                        const isIncome = tx.transactionType === 'DEPOSIT' || tx.transactionType === 'SELL_FUND' || (tx.transactionType === 'TRANSFER' && isDest) || tx.transactionType === 'MOVE_MONEY_IN';
+                                        const isExpense = tx.transactionType === 'WITHDRAW' || tx.transactionType.includes('INVEST') || (tx.transactionType === 'TRANSFER' && isSource) || tx.transactionType === 'MOVE_MONEY_OUT';
+                                        
+                                        // Final determination (default to destination logic for transfers, otherwise type-based)
+                                        const expense = isExpense && !isIncome;
+                                        
+                                        // Transaction Icon Map
+                                        let Icon = 'TX';
+                                        let bgClass = isExpense ? 'bg-rose-50 text-rose-500' : 'bg-emerald-50 text-emerald-500';
+                                        
+                                        if (tx.transactionType === 'DEPOSIT') Icon = 'DP';
+                                        if (tx.transactionType === 'WITHDRAW') Icon = 'WD';
+                                        if (tx.transactionType === 'TRANSFER') Icon = isExpense ? 'OUT' : 'IN';
+                                        if (tx.transactionType.includes('INVEST')) {
+                                            Icon = 'IV';
+                                            bgClass = 'bg-slate-900 text-white';
+                                        }
+
+                                        return (
+                                            <div 
+                                                key={tx.id} 
+                                                onClick={() => handleRowClick(tx)}
+                                                className={`bg-white p-6 rounded-[2rem] border border-slate-100 flex items-center justify-between transition-all active:scale-[0.98] ${tx.transactionType === 'TRANSFER' ? 'cursor-pointer hover:shadow-md' : ''}`}
+                                            >
+                                                <div className="flex items-center gap-5">
+                                                    <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-[10px] font-black shadow-inner ${bgClass}`}>
+                                                        {Icon}
+                                                    </div>
+                                                    <div>
+                                                        <p className="font-black text-slate-900 text-sm uppercase tracking-tight leading-none mb-1.5">
+                                                            {tx.transactionType === 'TRANSFER' 
+                                                                ? (isExpense ? `To ${tx.destinationAccount.user.firstName}` : `From ${tx.sourceAccount.user.firstName}`) 
+                                                                : tx.transactionType.replace(/_/g, ' ')}
+                                                        </p>
+                                                        <p className="text-slate-400 text-[10px] font-bold">
+                                                            {new Date(tx.transactionDate).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                                <div className="text-right">
+                                                    <p className={`text-xl font-black tracking-tight tabular-nums ${expense ? 'text-rose-500' : 'text-emerald-500'}`}>
+                                                        {expense ? '−' : '+'} ฿{tx.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                                    </p>
+                                                    <p className="text-[9px] font-black text-slate-300 uppercase tracking-widest mt-0.5">Success</p>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
                             </div>
-                        ) : (
-                            transactions.map(tx => {
-                                // 🔥 Logic แยกสีเงินเข้า-เงินออก
-                                // ถ้าเป็นบัญชีเราเป็นผู้ส่ง (source) หรือเป็นประเภท WITHDRAW = สีแดง (เงินออก)
-                                const isExpense = tx.sourceAccount?.id === Number(selectedAccountId) || tx.transactionType === 'WITHDRAW' || tx.transactionType === 'MOVE_MONEY_OUT';
-                                const isIncome = tx.destinationAccount?.id === Number(selectedAccountId) || tx.transactionType === 'DEPOSIT';
-
-                                return (
-                                    <div 
-                                        key={tx.id} 
-                                        onClick={() => handleRowClick(tx)}
-                                        className={`bg-white p-6 rounded-[2.2rem] border border-slate-100 shadow-sm flex items-center justify-between transition-all active:scale-[0.97] hover:shadow-md ${tx.transactionType === 'TRANSFER' ? 'cursor-pointer hover:border-emerald-100' : ''}`}
-                                    >
-                                        <div className="flex items-center gap-5">
-                                            <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-lg font-black ${
-                                                isExpense ? 'bg-rose-50 text-rose-500' : 'bg-emerald-50 text-emerald-500'
-                                            }`}>
-                                                {tx.transactionType === 'TRANSFER' ? 'T' : tx.transactionType === 'DEPOSIT' ? 'D' : 'W'}
-                                            </div>
-                                            <div>
-                                                <p className="font-black text-slate-800 text-sm uppercase tracking-tight">
-                                                    {tx.transactionType === 'TRANSFER' 
-                                                        ? (isExpense ? `To ${tx.destinationAccount.user.firstName}` : `From ${tx.sourceAccount.user.firstName}`) 
-                                                        : tx.transactionType.replace(/_/g, ' ')}
-                                                </p>
-                                                <p className="text-slate-400 text-[10px] font-bold mt-0.5">
-                                                    {new Date(tx.transactionDate).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' })}
-                                                </p>
-                                            </div>
-                                        </div>
-                                        <div className="text-right">
-                                            <p className={`text-xl font-black tracking-tight ${isExpense ? 'text-rose-500' : 'text-emerald-500'}`}>
-                                                {isExpense ? '-' : '+'} ฿{tx.amount.toLocaleString(undefined, {minimumFractionDigits: 2})}
-                                            </p>
-                                            <p className="text-[9px] font-black text-slate-300 uppercase tracking-widest mt-1">SUCCESS</p>
-                                        </div>
-                                    </div>
-                                );
-                            })
-                        )}
-                    </div>
-                </main>
+                        ))
+                    )}
+                </div>
             </div>
 
             {/* ─── Digital Slip Modal ─── */}
             {showSlipModal && slipData && (
-                <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-sm animate-in fade-in duration-300">
-                    <div className="bg-white rounded-[2.5rem] w-full max-w-sm overflow-hidden shadow-2xl animate-in zoom-in-95 duration-300">
-                        <div className="bg-emerald-500 p-10 text-center relative overflow-hidden">
-                            <div className="absolute top-0 left-0 w-full h-full bg-black/5 pointer-events-none"></div>
-                            <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-4 border-4 border-white/20">
-                                <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" />
-                                </svg>
-                            </div>
-                            <h3 className="text-white font-black text-xl uppercase tracking-[0.1em]">Transaction Receipt</h3>
-                            <p className="text-emerald-100 text-[10px] mt-2 font-mono opacity-80">
-                                {new Date(slipData.date).toLocaleString('th-TH')}
-                            </p>
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+                    <div className="bg-white rounded-[2.5rem] w-full max-w-sm overflow-hidden shadow-2xl border border-slate-100">
+                        <div className="bg-emerald-600 p-10 text-center text-white relative">
+                            <h3 className="font-black text-lg uppercase tracking-widest leading-none mb-2">E-Receipt</h3>
+                            <p className="text-emerald-100/50 text-[10px] uppercase font-black tracking-[0.2em]">{new Date(slipData.date).toLocaleString('en-US')}</p>
                         </div>
 
-                        <div className="p-8 space-y-8 relative bg-white">
+                        <div className="p-8 space-y-8 bg-white relative">
                             <div className="text-center pb-8 border-b border-slate-50">
-                                <p className="text-slate-400 text-[10px] font-black uppercase tracking-[0.2em] mb-2">Amount Transferred</p>
-                                <h2 className="text-5xl font-black text-slate-900 tracking-tighter">฿{Number(slipData.amount).toLocaleString(undefined, {minimumFractionDigits: 2})}</h2>
+                                <p className="text-slate-300 text-[9px] font-black uppercase tracking-widest mb-2">Transaction Amount</p>
+                                <h2 className="text-4xl font-black text-slate-900 tracking-tighter">฿{Number(slipData.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}</h2>
                             </div>
 
-                            <div className="space-y-7 relative">
-                                <div className="absolute left-[11px] top-3 bottom-3 border-l-2 border-dashed border-slate-100"></div>
-                                <div className="flex gap-5 relative">
-                                    <div className="w-6 h-6 rounded-full bg-slate-900 flex-shrink-0 z-10 border-4 border-white shadow-sm"></div>
+                            <div className="space-y-6 relative px-2">
+                                <div className="absolute left-[13px] top-4 bottom-4 border-l-2 border-dashed border-slate-100"></div>
+                                <div className="flex gap-4 relative">
+                                    <div className="w-7 h-7 rounded-lg bg-slate-900 flex-shrink-0 z-10 border-4 border-white shadow-sm"></div>
                                     <div>
-                                        <p className="text-[9px] font-black text-slate-300 uppercase tracking-widest mb-1">From</p>
-                                        <p className="text-sm font-black text-slate-800 tracking-tight">{slipData.fromName}</p>
-                                        <p className="text-[10px] text-slate-400 font-mono">****{slipData.fromAccount.slice(-4)}</p>
+                                        <p className="text-[8px] font-black text-slate-300 uppercase tracking-widest leading-none mb-1">Sender</p>
+                                        <p className="text-xs font-black text-slate-900">{slipData.fromName}</p>
+                                        <p className="text-[9px] text-slate-400 font-mono">****{slipData.fromAccount.slice(-4)}</p>
                                     </div>
                                 </div>
 
-                                <div className="flex gap-5 relative">
-                                    <div className="w-6 h-6 rounded-full bg-emerald-500 flex-shrink-0 z-10 border-4 border-white shadow-sm"></div>
+                                <div className="flex gap-4 relative">
+                                    <div className="w-7 h-7 rounded-lg bg-emerald-500 flex-shrink-0 z-10 border-4 border-white shadow-sm"></div>
                                     <div>
-                                        <p className="text-[9px] font-black text-emerald-300 uppercase tracking-widest mb-1">To</p>
-                                        <p className="text-sm font-black text-slate-800 tracking-tight">{slipData.toName}</p>
-                                        <p className="text-[10px] text-slate-400 font-mono">****{slipData.toAccount.slice(-4)}</p>
+                                        <p className="text-[8px] font-black text-emerald-400 uppercase tracking-widest leading-none mb-1">Receiver</p>
+                                        <p className="text-xs font-black text-slate-900">{slipData.toName}</p>
+                                        <p className="text-[9px] text-slate-400 font-mono">****{slipData.toAccount.slice(-4)}</p>
                                     </div>
                                 </div>
                             </div>
 
-                            <div className="pt-6 flex justify-between items-center border-t border-slate-50">
+                            <div className="pt-6 flex justify-between items-end border-t border-slate-50">
                                 <div>
-                                    <p className="text-[8px] font-black text-slate-300 uppercase tracking-widest mb-1">Reference ID</p>
-                                    <p className="text-[10px] font-mono text-slate-400 font-bold">#VB-{slipData.transactionId.toString().padStart(6, '0')}</p>
+                                    <p className="text-[8px] font-black text-slate-300 uppercase tracking-widest mb-1">TX Ref ID</p>
+                                    <p className="text-[9px] font-mono text-slate-400 font-bold">#VB-{slipData.transactionId.toString().padStart(6, '0')}</p>
                                 </div>
                                 <button 
                                     onClick={() => setShowSlipModal(false)}
-                                    className="px-8 py-3 bg-slate-900 text-white rounded-[1.2rem] font-black text-[10px] uppercase tracking-widest shadow-lg active:scale-95 transition-all"
+                                    className="px-6 py-3 bg-slate-900 text-white rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-800 transition-all active:scale-95"
                                 >
                                     Close
                                 </button>
                             </div>
                         </div>
-                        {/* Zigzag Bottom Decor */}
-                        <div className="flex justify-between px-2 -mb-2">
-                            {[...Array(15)].map((_, i) => (<div key={i} className="w-4 h-4 bg-slate-50 rounded-full"></div>))}
+
+                        {/* Traditional Zigzag */}
+                        <div className="flex justify-between px-2 -mb-2 overflow-hidden">
+                            {[...Array(15)].map((_, i) => (
+                                <div key={i} className="w-4 h-4 bg-slate-50 rounded-full flex-shrink-0"></div>
+                            ))}
                         </div>
                     </div>
                 </div>

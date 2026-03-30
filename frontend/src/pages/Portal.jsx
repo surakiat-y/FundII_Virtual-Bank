@@ -3,7 +3,6 @@ import { useNavigate, useOutletContext } from 'react-router-dom';
 import { QRCodeCanvas } from 'qrcode.react';
 import { toPng } from 'html-to-image';
 import LoadingGuard from '../components/LoadingGuard';
-import PinModal from '../components/PinModal';
 import api from '../utils/axios';
 
 const Portal = () => {
@@ -23,6 +22,8 @@ const Portal = () => {
     const [favorites, setFavorites] = useState([]);
     const [showSlipModal, setShowSlipModal] = useState(false);
     const [slipData, setSlipData] = useState(null);
+    const [isStatusModalOpen, setIsStatusModalOpen] = useState(false);
+    const [isLoading, setIsLoading] = useState(true);
     const [showQRModal, setShowQRModal] = useState(false);
     const [qrValue, setQRValue] = useState('');
     const [selectedAccForQR, setSelectedAccForQR] = useState(null);
@@ -34,6 +35,7 @@ const Portal = () => {
     const [destAccountNumber, setDestAccountNumber] = useState('');
     const [destAccountName, setDestAccountName] = useState('');
     const [destId, setDestId] = useState(null);
+    const [isDestSuspended, setIsDestSuspended] = useState(false);
     const [transferAmount, setTransferAmount] = useState('');
     const [showWithdrawModal, setShowWithdrawModal] = useState(false);
     const [withdrawAccountId, setWithdrawAccountId] = useState('');
@@ -43,18 +45,27 @@ const Portal = () => {
     const [moveDestId, setMoveDestId] = useState('');
     const [moveAmount, setMoveAmount] = useState('');
     const [isProcessing, setIsProcessing] = useState(false);
-    const [isStatusModalOpen, setIsStatusModalOpen] = useState(false);
 
-    // ─── Security & Verification States ───
     const [isPinModalOpen, setIsPinModalOpen] = useState(false);
     const [pinMode, setPinMode] = useState('VERIFY'); // 'VERIFY' or 'SETUP'
     const [pendingAction, setPendingAction] = useState(null);
     const [isVerifyingStatus, setIsVerifyingStatus] = useState(true); // 🔥 Guard State
+    const [isAccountsLoading, setIsAccountsLoading] = useState(true); // 🔥 Localized Loading
+    const [showAddFavModal, setShowAddFavModal] = useState(false);
+    const [newFav, setNewFav] = useState({ nickname: '', accountNumber: '', ownerName: '' });
+    const [isAddingFav, setIsAddingFav] = useState(false);
 
     const fetchAccounts = (userId) => {
+        setIsAccountsLoading(true);
         api.get(`/accounts/user/${userId}`)
-            .then(res => setAccounts(res.data))
-            .catch(err => console.error(err));
+            .then(res => {
+                setAccounts(res.data);
+                setIsAccountsLoading(false);
+            })
+            .catch(err => {
+                console.error(err);
+                setIsAccountsLoading(false);
+            });
     };
 
     const fetchFunds = () => {
@@ -104,41 +115,33 @@ const Portal = () => {
         if (!loggedInUser) { navigate('/login'); return; }
         const userData = JSON.parse(loggedInUser);
 
+        // 🔥 Set user IMMEDIATELY from localStorage for shell rendering
+        setUser(userData);
+        
+        // Parallel Data Fetching
+        fetchAccounts(userData.id);
+        fetchFavorites(userData.id);
+        fetchFunds();
+        fetchPortfolio(userData.id);
+
         console.log("Portal initializing... Checking status for ID:", userData.id);
 
-        // 🔥 CRITICAL GUARD: ต้องเช็ค Status สำเร็จก่อนถึงจะปล่อยให้เข้าหน้าจอ
+        // Security check runs in parallel without blocking screen (LoadingGuard will see user is present)
         api.get(`/auth/status/${userData.id}`)
             .then(res => {
                 const { status, hasPin } = res.data;
-                console.log("Portal status check success:", status);
-                
                 const freshUser = { ...userData, status, hasPin };
                 setUser(freshUser);
                 localStorage.setItem('user', JSON.stringify(freshUser));
 
-                if (status === 'BANNED' || status === 'BAN') {
-                    // ไม่เด้งทันที แต่จะให้ StatusNotification จัดการ
-                    setIsStatusModalOpen(true);
-                    setIsVerifyingStatus(false); 
-                    return;
+                if (status === 'BANNED' || status === 'BAN' || status === 'SUSPENDED') {
+                    // Logic handled by reactive useEffect below
                 }
-
                 setIsVerifyingStatus(false);
-
-                // โหลดข้อมูล Dashboard
-                fetchAccounts(userData.id);
-                fetchFavorites(userData.id);
-                fetchFunds();
-                fetchPortfolio(userData.id);
             })
             .catch(err => {
-                console.error("Critical status check failed:", err);
-                setUser(userData);
+                console.error("Status check failed, continuing with local state:", err);
                 setIsVerifyingStatus(false);
-                fetchAccounts(userData.id);
-                fetchFavorites(userData.id);
-                fetchFunds();
-                fetchPortfolio(userData.id);
             });
 
         const interval = setInterval(() => {
@@ -148,34 +151,9 @@ const Portal = () => {
         return () => clearInterval(interval);
     }, [navigate]);
 
-    // 🔥 PIN Verification Wrapper
-    const requestPin = (action) => {
-        if (user.role === 'ADMIN') {
-            action();
-            return;
-        }
-
-        setPendingAction(() => action);
-        if (!user.hasPin) {
-            setPinMode('SETUP');
-        } else {
-            setPinMode('VERIFY');
-        }
-        setIsPinModalOpen(true);
-    };
-
-    const handlePinSuccess = () => {
-        if (pinMode === 'SETUP') {
-            const updatedUser = { ...user, hasPin: true };
-            setUser(updatedUser);
-            localStorage.setItem('user', JSON.stringify(updatedUser));
-            alert("Security PIN setup successful! You can now proceed.");
-        } else {
-            if (pendingAction) pendingAction();
-        }
-    };
 
     const handleConfirmSell = async () => {
+        if (checkSuspension()) return;
         if (!sellDestId || !sellUnits || sellUnits <= 0) {
             alert("กรุณาเลือกกระเป๋าและใส่จำนวนหน่วยที่ถูกต้องโบร!");
             return;
@@ -209,14 +187,26 @@ const Portal = () => {
             api.get(`/accounts/search?accountNumber=${destAccountNumber}`)
                 .then(res => {
                     const data = res.data;
-                    setDestAccountName(`${data.user.firstName} ${data.user.lastName}`);
-                    setDestId(data.id);
+                    if (data) {
+                        const status = data.user.status;
+                        const restricted = status === 'BANNED' || status === 'BAN' || status === 'SUSPENDED';
+                        
+                        setIsDestSuspended(restricted);
+                        if (restricted) {
+                            setDestAccountName(`${data.user.firstName} ${data.user.lastName}`);
+                            setDestId(null); // Keep ID null to prevent transfer
+                        } else {
+                            setDestAccountName(`${data.user.firstName} ${data.user.lastName}`);
+                            setDestId(data.id);
+                        }
+                    }
                 })
                 .catch(() => {
                     setDestAccountName('ไม่พบข้อมูลบัญชีปลายทาง');
                     setDestId(null);
+                    setIsDestSuspended(false);
                 });
-        } else { setDestAccountName(''); setDestId(null); }
+        } else { setDestAccountName(''); setDestId(null); setIsDestSuspended(false); }
     }, [destAccountNumber]);
 
     const handleSaveSlip = () => {
@@ -238,6 +228,7 @@ const Portal = () => {
 
     const handleShowQR = (account) => { setQRValue(account.accountNumber); setSelectedAccForQR(account); setShowQRModal(true); };
     const handleDeleteAccount = async (accountId, balance) => {
+        if (checkSuspension()) return;
         if (Number(balance) > 0) { alert("ย้ายเงินออกให้หมดก่อนลบนะโบร!"); return; }
         if (window.confirm("คุณแน่ใจใช่ไหมที่จะลบกระเป๋านี้?")) {
             try {
@@ -251,6 +242,7 @@ const Portal = () => {
     };
 
     const submitCreateAccount = async () => {
+        if (checkSuspension()) return;
         if (!newAccountName.trim()) return;
         try {
             await api.post(`/accounts/user/${user.id}/create`, {
@@ -312,8 +304,8 @@ const Portal = () => {
     };
 
     const handleMoveMoney = async () => {
-        if (!moveSourceAcc || !moveDestId || !moveAmount) return;
         if (checkSuspension()) return;
+        if (!moveSourceAcc || !moveDestId || !moveAmount) return;
         try {
             await api.post('/transactions/transfer', {
                 sourceAccountId: moveSourceAcc.id,
@@ -344,6 +336,66 @@ const Portal = () => {
         }
     }, [user?.status]);
 
+    const handleAddFavorite = async () => {
+        if (checkSuspension()) return;
+        if (!newFav.nickname || !newFav.accountNumber) {
+            alert("กรุณากรอกชื่อเล่นและเลขบัญชี");
+            return;
+        }
+        setIsAddingFav(true);
+        try {
+            await api.post('/favorites/add', {
+                userId: user.id,
+                nickname: newFav.nickname,
+                accountNumber: newFav.accountNumber,
+                ownerName: newFav.ownerName || newFav.nickname
+            });
+            setShowAddFavModal(false);
+            setNewFav({ nickname: '', accountNumber: '', ownerName: '' });
+            fetchFavorites(user.id);
+        } catch (error) {
+            console.error("Add favorite failed", error);
+            alert("เพิ่มรายชื่อโปรดไม่สำเร็จ: " + (error.response?.data?.message || error.message));
+        } finally {
+            setIsAddingFav(false);
+        }
+    };
+
+    const handleDeleteFavorite = async (id) => {
+        if (checkSuspension()) return;
+        if (!window.confirm("ต้องการลบรายชื่อโปรดนี้ใช่หรือไม่?")) return;
+        try {
+            await api.delete(`/api/favorites/${id}`);
+            fetchFavorites(user.id);
+        } catch (error) {
+            console.error("Delete favorite failed", error);
+        }
+    };
+
+    // --- Auto-Detect Account Name for Favorites ---
+    useEffect(() => {
+        if (showAddFavModal && newFav.accountNumber?.length === 10) {
+            const lookupAccount = async () => {
+                setNewFav(prev => ({ ...prev, ownerName: 'checking...' }));
+                try {
+                    const res = await api.get(`/accounts/search?accountNumber=${newFav.accountNumber}`);
+                    if (res.data) {
+                        const fullName = `${res.data.user.firstName} ${res.data.user.lastName}`;
+                        setNewFav(prev => ({ ...prev, ownerName: fullName }));
+                    } else {
+                        setNewFav(prev => ({ ...prev, ownerName: 'ไม่พบเลขบัญชี' }));
+                    }
+                } catch (error) {
+                    console.error("Account lookup failed", error);
+                    setNewFav(prev => ({ ...prev, ownerName: 'ไม่พบเลขบัญชี' }));
+                }
+            };
+            lookupAccount();
+        } else if (showAddFavModal && newFav.accountNumber?.length < 10) {
+            setNewFav(prev => ({ ...prev, ownerName: '' }));
+        }
+    }, [newFav.accountNumber, showAddFavModal]);
+
     return (
         <LoadingGuard
             isLoading={isVerifyingStatus}
@@ -365,14 +417,20 @@ const Portal = () => {
                 return (
                     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans overflow-x-hidden">
             
-            <div className="animate-slideInRight">
+            <div>
                 <main className="max-w-5xl mx-auto p-8">
                     {/* ... existing content ... */}
                     <div className="bg-gradient-to-br from-[#065f46] to-[#042f2e] rounded-[3rem] p-12 text-white shadow-2xl shadow-emerald-900/20 mb-12 relative overflow-hidden font-display border border-white/10">
                         <p className="text-emerald-100/60 text-xs font-black uppercase tracking-[0.3em] mb-3">Total Balance</p>
                         <h1 className="text-7xl font-black mb-12 flex items-baseline gap-2">
                             <span className="text-4xl text-emerald-400">฿</span>
-                            {totalBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                            {isAccountsLoading ? (
+                                <div className="h-[72px] w-64 bg-white/20 animate-pulse rounded-3xl mt-2 overflow-hidden relative">
+                                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-full animate-shimmer"></div>
+                                </div>
+                            ) : (
+                                totalBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })
+                            )}
                         </h1>
                         <div className="flex flex-wrap gap-4 mt-8">
                             <button onClick={() => checkSuspension() ? null : setShowTransferModal(true)} className="bg-white text-emerald-900 px-8 py-4 rounded-2xl font-bold text-sm shadow-lg active:scale-95 transition-all">Transfer</button>
@@ -391,10 +449,19 @@ const Portal = () => {
                         <div className="mb-12">
                             <div className="flex justify-between items-end mb-6 px-2">
                                 <h2 className="text-2xl font-black text-slate-800">My Pockets</h2>
-                                <button onClick={() => navigate('/your-pocket')} className="text-emerald-600 font-bold uppercase text-[11px] tracking-widest hover:text-emerald-700">Go to pocket</button>
+                                <button onClick={() => navigate('/your-pocket')} className="px-4 py-2 bg-emerald-50 text-emerald-600 rounded-xl font-bold uppercase text-[10px] tracking-widest hover:bg-emerald-100 transition-all border border-emerald-100/50 shadow-sm active:scale-95">Go to pocket</button>
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                {displayPockets.length > 0 ? displayPockets.map((account) => {
+                                {isAccountsLoading ? (
+                                    [1, 2].map(i => (
+                                        <div key={i} className="bg-white border border-slate-100 rounded-[2rem] p-6 shadow-sm overflow-hidden relative">
+                                            <div className="h-4 w-24 bg-slate-100 animate-pulse rounded-full mb-2"></div>
+                                            <div className="h-4 w-32 bg-slate-50 animate-pulse rounded-full mb-6"></div>
+                                            <div className="h-10 w-48 bg-slate-100 animate-pulse rounded-2xl"></div>
+                                            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/60 to-transparent -translate-x-full animate-shimmer"></div>
+                                        </div>
+                                    ))
+                                ) : displayPockets.length > 0 ? displayPockets.map((account) => {
                                     const goal = Number(account.savingsGoal || account.savings_goal) || 0;
                                     const balance = Number(account.balance) || 0;
                                     const percentage = goal > 0 ? Math.min((balance / goal) * 100, 100) : 0;
@@ -407,7 +474,7 @@ const Portal = () => {
                                                 </div>
                                                 <div className="flex gap-2">
                                                     <button onClick={() => handleShowQR(account)} className="bg-slate-50 text-slate-400 p-2 rounded-xl hover:bg-emerald-50 hover:text-emerald-600 shadow-sm transition-all"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" /></svg></button>
-                                                    <button onClick={() => { setMoveSourceAcc(account); setShowMoveModal(true); }} className="bg-emerald-50 text-emerald-600 px-3 py-1.5 rounded-xl font-bold text-[10px] uppercase tracking-wider hover:bg-emerald-100 shadow-sm transition-colors">Move Money</button>
+                                                    <button onClick={() => checkSuspension() ? null : (setMoveSourceAcc(account), setShowMoveModal(true))} className="bg-emerald-50 text-emerald-600 px-3 py-1.5 rounded-xl font-bold text-[10px] uppercase tracking-wider hover:bg-emerald-100 shadow-sm transition-colors">Move Money</button>
                                                 </div>
                                             </div>
                                             <h3 className="text-3xl font-black">฿{balance.toLocaleString()}</h3>
@@ -423,49 +490,103 @@ const Portal = () => {
                             </div>
                         </div>
 
-                            <div className="px-2">
-                                <h2 className="text-2xl font-black text-slate-800 mb-6">My Assets 📈</h2>
+                            <div className="mb-12">
+                                <div className="flex justify-between items-end mb-6 px-2">
+                                    <h2 className="text-2xl font-black text-slate-800">My Assets</h2>
+                                    <button onClick={() => navigate('/investment')} className="px-4 py-2 bg-emerald-50 text-emerald-600 rounded-xl font-bold uppercase text-[10px] tracking-widest hover:bg-emerald-100 transition-all border border-emerald-100/50 shadow-sm active:scale-95">Go to Investment</button>
+                                </div>
                                 <div className="grid grid-cols-1 gap-4">
                                     {portfolio.length > 0 ? portfolio.map(item => {
                                         const fundInfo = funds.find(f => f.id === item.fundId);
-                                        const currentNav = fundInfo ? fundInfo.nav : item.avgPrice;
+                                        const currentNav = fundInfo?.nav ?? item.avgPrice ?? 0;
                                         const profit = (currentNav - item.avgPrice) * item.units;
-                                        const profitPercent = ((currentNav - item.avgPrice) / item.avgPrice) * 100;
+                                        const profitPercent = item.avgPrice > 0 ? ((currentNav - item.avgPrice) / item.avgPrice) * 100 : 0;
                                         return (
-                                            <div key={item.id} className="bg-white border border-slate-100 rounded-[2rem] p-6 flex justify-between items-center shadow-sm">
-                                                <div className="flex items-center gap-4">
-                                                    <div className="w-12 h-12 bg-indigo-50 rounded-2xl flex items-center justify-center font-black text-indigo-600">{fundInfo?.fundCode.slice(-2) || '??'}</div>
+                                            <div key={item.id} className="bg-white border border-slate-100 rounded-[2rem] p-6 flex justify-between items-center shadow-sm hover:shadow-md transition-all group">
+                                                <div className="flex items-center gap-6">
+                                                    <div className="w-14 h-14 bg-indigo-50 rounded-2xl flex items-center justify-center font-black text-indigo-600 text-lg uppercase transition-transform group-hover:scale-105">
+                                                        {fundInfo?.fundCode.slice(0, 2) || '??'}
+                                                    </div>
                                                     <div>
-                                                        <p className="text-[10px] font-black text-slate-400 uppercase">{fundInfo?.fundName || 'Loading...'}</p>
-                                                        <p className="text-xl font-black">{item.units.toFixed(4)} Units</p>
-                                                        <button 
-                                                            onClick={() => { setSelectedAsset(item); setSellUnits(item.units); setSellDestId(accounts[0]?.id); setShowSellModal(true); }}
-                                                            className="mt-2 text-[10px] font-black text-rose-500 border border-rose-500/30 px-4 py-1.5 rounded-xl hover:bg-rose-500 hover:text-white transition-all uppercase tracking-widest active:scale-95"
-                                                        >
-                                                            Sell
-                                                        </button>
+                                                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-tight mb-1">{fundInfo?.fundName || 'Loading...'}</p>
+                                                        <p className="text-xl font-black text-slate-900">{item.units.toFixed(4)} Units</p>
                                                     </div>
                                                 </div>
+
                                                 <div className="text-right">
-                                                    <p className={`text-sm font-bold ${profit >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>{profit >= 0 ? '+' : ''}{profit.toFixed(2)} THB ({profitPercent.toFixed(2)}%)</p>
-                                                    <p className="text-[10px] font-bold text-slate-400 uppercase">Market Value: ฿{(item.units * currentNav).toLocaleString()}</p>
+                                                    <p className={`text-sm font-bold ${profit >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                                                        {profit >= 0 ? '+' : ''}{profit.toFixed(2)} THB ({profitPercent.toFixed(2)}%)
+                                                    </p>
+                                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">
+                                                        Market Value: ฿{(item.units * currentNav).toLocaleString()}
+                                                    </p>
                                                 </div>
                                             </div>
                                         );
                                     }) : (
-                                        <div className="bg-slate-50 border-2 border-dashed border-slate-200 rounded-[2rem] p-10 text-center"><p className="text-slate-400 text-sm font-bold italic">ไม่มีสินทรัพย์... ไปที่ Marketplace เลยโบร!</p></div>
+                                        <div className="bg-slate-50 border-2 border-dashed border-slate-200 rounded-[2rem] p-10 text-center"><p className="text-slate-400 text-sm font-bold italic">No assets found... Go to Marketplace now!</p></div>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* --- My Favorite Section (Relocated below My Assets) --- */}
+                            <div className="mb-12">
+                                <div className="flex justify-between items-end mb-6 px-2">
+                                    <h2 className="text-2xl font-black text-slate-800 tracking-tight">My Favorite</h2>
+                                    <button 
+                                        onClick={() => checkSuspension() ? null : setShowAddFavModal(true)}
+                                        className="px-4 py-2 bg-white text-emerald-600 rounded-xl font-bold uppercase text-[10px] tracking-widest hover:bg-emerald-600 hover:text-white transition-all border border-emerald-100 shadow-sm active:scale-95 flex items-center gap-2 group/btn"
+                                    >
+                                        <svg className="w-3.5 h-3.5 group-hover/btn:rotate-90 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M12 4v16m8-8H4" /></svg>
+                                        Add Favorite
+                                    </button>
+                                </div>
+                                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6">
+                                    {favorites.length > 0 ? favorites.map(fav => (
+                                        <div key={fav.id} className="group relative">
+                                            <button 
+                                                onClick={() => checkSuspension() ? null : (
+                                                    setDestAccountNumber(fav.accountNumber),
+                                                    setDestAccountName(fav.ownerName),
+                                                    setShowTransferModal(true)
+                                                )}
+                                                className="w-full bg-white border border-slate-100 rounded-[2rem] p-6 flex flex-col items-center justify-center shadow-sm hover:shadow-md hover:border-emerald-100 transition-all active:scale-95 group overflow-hidden"
+                                            >
+                                                <div className="w-16 h-16 bg-gradient-to-br from-emerald-400 to-emerald-600 rounded-[1.5rem] flex items-center justify-center mb-3 group-hover:scale-110 group-hover:shadow-lg group-hover:shadow-emerald-200/50 transition-all shadow-sm border border-white/20">
+                                                    <span className="text-white font-black text-2xl uppercase drop-shadow-md">{fav.nickname.slice(0, 1)}</span>
+                                                </div>
+                                                <p className="text-xs font-black text-slate-800 text-center truncate w-full mb-1">{fav.nickname}</p>
+                                                <p className="text-[9px] font-bold text-slate-400 font-mono tracking-tighter">#{fav.accountNumber}</p>
+                                            </button>
+                                            <button 
+                                                onClick={(e) => { e.stopPropagation(); if (checkSuspension()) return; handleDeleteFavorite(fav.id); }}
+                                                className="absolute -top-2 -right-2 w-7 h-7 bg-white text-rose-500 rounded-full flex items-center justify-center shadow-md border border-slate-100 opacity-0 group-hover:opacity-100 transition-all hover:bg-rose-500 hover:text-white hover:scale-110"
+                                            >
+                                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M6 18L18 6M6 6l12 12" /></svg>
+                                            </button>
+                                        </div>
+                                    )) : (
+                                        <div className="col-span-full bg-slate-50/50 border-2 border-dashed border-slate-200 rounded-[2rem] p-10 text-center">
+                                            <p className="text-sm font-bold text-slate-400 italic">No favorites yet. Save your frequent recipients here!</p>
+                                        </div>
                                     )}
                                 </div>
                             </div>
                         </div>
 
                         <div>
-                            <div className="flex justify-between items-end mb-6 px-2"><h2 className="text-2xl font-black text-slate-800">Market</h2><span className="text-[10px] text-slate-400 font-bold uppercase animate-pulse">Live</span></div>
+                            <div className="flex justify-between items-center mb-6 px-2">
+                                <h2 className="text-2xl font-black text-slate-800 tracking-tight">Market Pulse</h2>
+                                <span className="flex items-center gap-1.5 text-[10px] text-emerald-500 font-black uppercase tracking-widest bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-100">
+                                    <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span>
+                                    Live
+                                </span>
+                            </div>
                             <div className="bg-white border border-slate-100 rounded-[2.5rem] p-6 shadow-sm space-y-6">
                                 {funds.map(fund => (
                                     <div key={fund.id} className="flex justify-between items-center group">
-                                        <div className="flex items-center gap-3"><div className="w-10 h-10 bg-slate-50 rounded-2xl flex items-center justify-center text-xs font-black text-slate-400 group-hover:bg-amber-50 group-hover:text-amber-600 transition-all">{fund.fundCode.slice(-2)}</div><div><p className="text-[11px] font-black text-slate-800 uppercase">{fund.fundCode}</p><p className="text-[9px] text-slate-400 font-medium">{fund.fundName}</p></div></div>
-                                        <div className="text-right"><p className="text-xs font-black text-slate-800 font-mono">{fund.nav.toFixed(4)}</p><p className="text-[9px] font-bold text-emerald-500">NAV</p></div>
+                                        <div className="flex items-center gap-3"><div className="w-10 h-10 bg-slate-50 rounded-2xl flex items-center justify-center text-xs font-black text-slate-400 group-hover:bg-amber-50 group-hover:text-amber-600 transition-all">{(fund.fundCode || "??").slice(0, 2)}</div><div><p className="text-[11px] font-black text-slate-800 uppercase">{fund.fundCode}</p><p className="text-[9px] text-slate-400 font-medium">{fund.fundName}</p></div></div>
+                                        <div className="text-right"><p className="text-xs font-black text-slate-800 font-mono">{(fund.nav || 0).toFixed(4)}</p><p className="text-[9px] font-bold text-emerald-500">NAV</p></div>
                                     </div>
                                 ))}
                                 <button onClick={() => navigate('/investment')} className="w-full py-4 bg-slate-50 text-slate-400 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-emerald-50 hover:text-emerald-600 transition-all border border-transparent hover:border-emerald-100 shadow-sm active:scale-95">Marketplace</button>
@@ -494,7 +615,7 @@ const Portal = () => {
                             </div>
                             <div className="flex gap-3 pt-4">
                                 <button onClick={() => setShowSellModal(false)} className="flex-1 py-4 font-bold text-slate-400 bg-slate-50 rounded-2xl transition-all">Cancel</button>
-                                <button onClick={() => requestPin(handleConfirmSell)} className="flex-1 py-4 font-bold text-white bg-rose-500 rounded-2xl shadow-lg shadow-rose-200 transition-all active:scale-95">Confirm Sell</button>
+                                <button onClick={handleConfirmSell} className="flex-1 py-4 font-bold text-white bg-rose-500 rounded-2xl shadow-lg shadow-rose-200 transition-all active:scale-95">Confirm Sell</button>
                             </div>
                         </div>
                     </div>
@@ -502,9 +623,9 @@ const Portal = () => {
             )}
 
             {showSlipModal && slipData && (
-                <div className="fixed inset-0 z-[160] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-sm">
+                <div className="fixed inset-0 z-[160] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-sm animate-in zoom-in-95 duration-300">
                     <div className="w-full max-w-sm">
-                        <div id="digital-slip" className="bg-white rounded-[40px] overflow-hidden w-full font-sans shadow-2xl">
+                        <div id="digital-slip" className="bg-white rounded-[2rem] overflow-hidden w-full font-sans shadow-2xl">
                             <div className="bg-emerald-500 p-10 text-center">
                                 <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-4 border-4 border-white/30 text-white font-bold text-3xl">✓</div>
                                 <h3 className="text-white font-black uppercase tracking-widest text-lg m-0">Transfer Success</h3>
@@ -540,10 +661,15 @@ const Portal = () => {
             )}
 
             {showQRModal && selectedAccForQR && (
-                <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md">
-                    <div className="bg-white rounded-[2.5rem] p-8 w-full max-w-sm shadow-2xl text-center">
-                        <div className="flex justify-between items-center mb-8"><span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">My QR Code</span><button onClick={() => setShowQRModal(false)} className="text-slate-300 hover:text-slate-500">✕</button></div>
-                        <div className="bg-slate-50 p-6 rounded-[2rem] inline-block mb-6 border-4 border-white shadow-inner"><QRCodeCanvas value={qrValue} size={200} level={"H"} fgColor="#0f172a" includeMargin={true} /></div>
+                <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in zoom-in-95 duration-300">
+                    <div className="bg-white rounded-[2rem] p-8 w-full max-w-sm shadow-2xl text-center">
+                        <div className="flex justify-between items-center mb-8">
+                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest font-mono">My QR Code</span>
+                            <button onClick={() => setShowQRModal(false)} className="w-8 h-8 bg-slate-50 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-900 transition-colors">
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" /></svg>
+                            </button>
+                        </div>
+                        <div className="bg-slate-50 p-6 rounded-[2.5rem] inline-block mb-6 border-4 border-white shadow-inner"><QRCodeCanvas value={qrValue} size={200} level={"H"} fgColor="#0f172a" includeMargin={true} /></div>
                         <div className="mb-8"><h3 className="text-xl font-black text-slate-800">{user.firstName} {user.lastName}</h3><p className="text-slate-400 font-mono text-sm mt-1">{selectedAccForQR.accountName}</p><p className="bg-emerald-50 text-emerald-600 font-mono font-bold py-2 px-4 rounded-xl inline-block mt-4 tracking-tighter">{selectedAccForQR.accountNumber}</p></div>
                         <button onClick={() => setShowQRModal(false)} className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl active:scale-95 transition-all">Done</button>
                     </div>
@@ -551,53 +677,177 @@ const Portal = () => {
             )}
 
             {showTransferModal && (
-                <div className="fixed inset-0 z-[140] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md text-slate-800">
-                    <div className="bg-white rounded-[2.5rem] p-8 w-full max-w-lg shadow-2xl">
-                        <div className="flex justify-between items-start mb-8 font-black"><h3 className="text-3xl">Transfer</h3><button onClick={() => setShowTransferModal(false)} className="text-slate-400 hover:text-slate-600">✕</button></div>
+                <div className="fixed inset-0 z-[140] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+                    <div className="bg-white rounded-[2rem] p-8 w-full max-w-lg shadow-2xl animate-in zoom-in-95 duration-300">
+                        <div className="flex justify-between items-start mb-8">
+                            <div>
+                                <h3 className="text-3xl font-bold text-slate-900 tracking-tight">Transfer</h3>
+                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Send funds to another account</p>
+                            </div>
+                            <button onClick={() => setShowTransferModal(false)} className="w-8 h-8 bg-slate-50 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-900">
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" /></svg>
+                            </button>
+                        </div>
+                        
                         <div className="space-y-6">
-                            <select value={sourceId} onChange={(e) => setSourceId(e.target.value)} className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-6 py-4 font-bold outline-none">
-                                <option value="">Select source pocket</option>
-                                {accounts.map(acc => <option key={acc.id} value={acc.id}>{acc.accountName} (฿{acc.balance.toLocaleString()})</option>)}
-                            </select>
-                            <input type="text" placeholder="Account Number" maxLength="10" value={destAccountNumber} onChange={(e) => setDestAccountNumber(e.target.value)} className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-6 py-4 font-bold outline-none" />
-                            {destAccountName && <p className="text-xs font-bold text-emerald-600 px-2 italic">{destAccountName}</p>}
-                            <input type="number" placeholder="Amount" value={transferAmount} onChange={(e) => setTransferAmount(e.target.value)} className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-6 py-4 font-black text-2xl outline-none" />
-                            <button onClick={() => requestPin(handleTransfer)} disabled={isProcessing || !destId} className="w-full py-5 rounded-2xl font-black text-white bg-[#065f46] shadow-xl active:scale-95 transition-all">Confirm Transfer</button>
+                            <div>
+                                <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 mb-2 block tracking-tight">Source Pocket</label>
+                                <select 
+                                    value={sourceId} 
+                                    onChange={(e) => setSourceId(e.target.value)} 
+                                    className="w-full bg-slate-50 border-2 border-slate-50 p-5 rounded-xl outline-none focus:border-slate-500/20 font-bold appearance-none cursor-pointer"
+                                >
+                                    <option value="">Select source pocket</option>
+                                    {accounts.map(acc => <option key={acc.id} value={acc.id}>{acc.accountName.toUpperCase()} (฿{acc.balance.toLocaleString()})</option>)}
+                                </select>
+                            </div>
+
+                            <div>
+                                <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 mb-2 block tracking-tight">Recipient Account Number</label>
+                                <input 
+                                    type="text" 
+                                    placeholder="Account Number (10 digits)" 
+                                    maxLength="10" 
+                                    value={destAccountNumber} 
+                                    onChange={(e) => setDestAccountNumber(e.target.value)} 
+                                    className="w-full bg-slate-50 border-2 border-slate-50 p-5 rounded-xl outline-none focus:border-slate-500/20 font-black text-xl" 
+                                />
+                                {destAccountName && <p className="mt-2 text-[9px] font-bold text-emerald-600 uppercase ml-1 italic">{destAccountName}</p>}
+                            </div>
+
+                            <div>
+                                <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 mb-2 block tracking-tight">Transfer Amount (THB)</label>
+                                <div className="relative">
+                                    <input 
+                                        type="number" 
+                                        placeholder="0.00" 
+                                        value={transferAmount} 
+                                        onChange={(e) => setTransferAmount(e.target.value)} 
+                                        className="w-full bg-slate-50 border-2 border-slate-50 p-5 rounded-xl outline-none focus:border-slate-500/20 font-black text-3xl" 
+                                    />
+                                    <span className="absolute right-5 top-1/2 -translate-y-1/2 text-[11px] font-bold text-slate-300 uppercase">THB</span>
+                                </div>
+                            </div>
+
+                            <div className="pt-2 flex flex-col gap-2">
+                                <button 
+                                    onClick={handleTransfer} 
+                                    disabled={isProcessing || !destId || isDestSuspended} 
+                                    className={`w-full py-4 font-bold rounded-xl shadow-lg uppercase text-[11px] active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed ${isDestSuspended ? 'bg-rose-500 text-white' : 'bg-slate-900 text-white'}`}
+                                >
+                                    {isDestSuspended ? 'Account Suspended' : 'Confirm Transfer'}
+                                </button>
+                                <button onClick={() => setShowTransferModal(false)} className="w-full py-2 font-bold text-slate-400 text-[10px] text-center hover:text-slate-900 transition-all uppercase tracking-widest">Go Back</button>
+                            </div>
                         </div>
                     </div>
                 </div>
             )}
 
             {showWithdrawModal && (
-                <div className="fixed inset-0 z-[130] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md text-slate-800">
-                    <div className="bg-white rounded-[2.5rem] p-8 w-full max-w-md shadow-2xl tracking-tight">
-                        <h3 className="text-3xl font-black mb-8">Withdraw</h3>
+                <div className="fixed inset-0 z-[130] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm tracking-tight text-slate-800">
+                    <div className="bg-white rounded-[2rem] p-8 w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-300">
+                        <div className="flex justify-between items-start mb-8">
+                            <div>
+                                <h3 className="text-3xl font-bold text-slate-900 tracking-tight text-left">Withdraw</h3>
+                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Access your cash instantly</p>
+                            </div>
+                            <button onClick={() => setShowWithdrawModal(false)} className="w-8 h-8 bg-slate-50 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-900">
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" /></svg>
+                            </button>
+                        </div>
+
                         <div className="space-y-6">
-                            <select value={withdrawAccountId} onChange={(e) => setWithdrawAccountId(e.target.value)} className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-6 py-4 font-bold outline-none">
-                                <option value="">Select pocket</option>
-                                {accounts.map(acc => <option key={acc.id} value={acc.id}>{acc.accountName} (฿{acc.balance.toLocaleString()})</option>)}
-                            </select>
-                            <input type="number" placeholder="Amount" value={withdrawAmount} onChange={(e) => setWithdrawAmount(e.target.value)} className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-6 py-4 font-black text-2xl outline-none" />
-                            <button onClick={() => requestPin(handleWithdraw)} disabled={isProcessing} className="w-full py-5 rounded-2xl font-black text-white bg-[#065f46] shadow-xl active:scale-95 transition-all">Confirm Withdrawal</button>
-                            <button onClick={() => setShowWithdrawModal(false)} className="w-full text-slate-400 font-bold uppercase text-[10px] tracking-widest mt-2 hover:text-slate-600 transition-colors">Cancel</button>
+                            <div>
+                                <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 mb-2 block tracking-tight">Withdraw From</label>
+                                <select 
+                                    value={withdrawAccountId} 
+                                    onChange={(e) => setWithdrawAccountId(e.target.value)} 
+                                    className="w-full bg-slate-50 border-2 border-slate-50 p-5 rounded-xl outline-none focus:border-slate-500/20 font-bold appearance-none cursor-pointer"
+                                >
+                                    <option value="">Select pocket</option>
+                                    {accounts.map(acc => <option key={acc.id} value={acc.id}>{acc.accountName.toUpperCase()} (฿{acc.balance.toLocaleString()})</option>)}
+                                </select>
+                            </div>
+
+                            <div>
+                                <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 mb-2 block tracking-tight">Withdrawal Amount (THB)</label>
+                                <div className="relative">
+                                    <input 
+                                        type="number" 
+                                        placeholder="0.00" 
+                                        value={withdrawAmount} 
+                                        onChange={(e) => setWithdrawAmount(e.target.value)} 
+                                        className="w-full bg-slate-50 border-2 border-slate-50 p-5 rounded-xl outline-none focus:border-slate-500/20 font-black text-3xl" 
+                                    />
+                                    <span className="absolute right-5 top-1/2 -translate-y-1/2 text-[11px] font-bold text-slate-300 uppercase">THB</span>
+                                </div>
+                            </div>
+
+                            <div className="pt-2 flex flex-col gap-2">
+                                <button 
+                                    onClick={handleWithdraw} 
+                                    disabled={isProcessing} 
+                                    className="w-full py-4 bg-slate-900 text-white font-bold rounded-xl shadow-lg uppercase text-[11px] active:scale-95 transition-all"
+                                >
+                                    Confirm Withdrawal
+                                </button>
+                                <button onClick={() => setShowWithdrawModal(false)} className="w-full py-2 font-bold text-slate-400 text-[10px] text-center hover:text-slate-900 transition-all uppercase tracking-widest">Go Back</button>
+                            </div>
                         </div>
                     </div>
                 </div>
             )}
 
             {showMoveModal && (
-                <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md text-slate-800">
-                    <div className="bg-white rounded-[2.5rem] p-8 w-full max-w-md shadow-2xl">
-                        <h3 className="text-2xl font-black mb-1 tracking-tight font-display">Move Money</h3>
-                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-8">From: {moveSourceAcc?.accountName}</p>
+                <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm text-slate-800">
+                    <div className="bg-white rounded-[2rem] p-8 w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-300">
+                        <div className="flex justify-between items-start mb-6">
+                            <div>
+                                <h3 className="text-2xl font-bold text-slate-900 tracking-tight">Move Money</h3>
+                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">From: {moveSourceAcc?.accountName.toUpperCase()}</p>
+                            </div>
+                            <button onClick={() => setShowMoveModal(false)} className="w-8 h-8 bg-slate-50 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-900">
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" /></svg>
+                            </button>
+                        </div>
+                        
                         <div className="space-y-6">
-                            <select value={moveDestId} onChange={(e) => setMoveDestId(e.target.value)} className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-6 py-4 font-bold outline-none">
-                                <option value="">To pocket</option>
-                                {accounts.filter(a => a.id !== moveSourceAcc?.id).map(a => <option key={a.id} value={a.id}>{a.accountName} (฿{a.balance.toLocaleString()})</option>)}
-                            </select>
-                            <input type="number" placeholder="Amount" value={moveAmount} onChange={(e) => setMoveAmount(e.target.value)} className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-6 py-4 font-black text-2xl outline-none" />
-                            <button onClick={handleMoveMoney} className="w-full py-5 rounded-2xl font-black text-white bg-[#065f46] shadow-xl active:scale-95 transition-all">Confirm Move</button>
-                            <button onClick={() => setShowMoveModal(false)} className="w-full text-slate-400 font-bold uppercase text-[10px] tracking-widest mt-2">Cancel</button>
+                            <div>
+                                <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 mb-2 block tracking-tight">To Pocket</label>
+                                <select 
+                                    value={moveDestId} 
+                                    onChange={(e) => setMoveDestId(e.target.value)} 
+                                    className="w-full bg-slate-50 border-2 border-slate-50 p-5 rounded-xl outline-none focus:border-slate-500/20 font-bold appearance-none cursor-pointer"
+                                >
+                                    <option value="">To pocket</option>
+                                    {accounts.filter(a => a.id !== moveSourceAcc?.id).map(a => <option key={a.id} value={a.id}>{a.accountName.toUpperCase()} (฿{a.balance.toLocaleString()})</option>)}
+                                </select>
+                            </div>
+
+                            <div>
+                                <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 mb-2 block tracking-tight">Amount to Move (THB)</label>
+                                <div className="relative">
+                                    <input 
+                                        type="number" 
+                                        placeholder="0.00" 
+                                        value={moveAmount} 
+                                        onChange={(e) => setMoveAmount(e.target.value)} 
+                                        className="w-full bg-slate-50 border-2 border-slate-50 p-5 rounded-xl outline-none focus:border-slate-500/20 font-black text-3xl" 
+                                    />
+                                    <span className="absolute right-5 top-1/2 -translate-y-1/2 text-[11px] font-bold text-slate-300 uppercase">THB</span>
+                                </div>
+                            </div>
+
+                            <div className="pt-2 flex flex-col gap-2">
+                                <button 
+                                    onClick={handleMoveMoney} 
+                                    className="w-full py-4 bg-slate-900 text-white font-bold rounded-xl shadow-lg uppercase text-[11px] active:scale-95 transition-all"
+                                >
+                                    Confirm Move
+                                </button>
+                                <button onClick={() => setShowMoveModal(false)} className="w-full py-2 font-bold text-slate-400 text-[10px] text-center hover:text-slate-900 transition-all uppercase tracking-widest">Go Back</button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -605,31 +855,118 @@ const Portal = () => {
 
             {showCreateModal && (
                 <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm text-slate-800">
-                    <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl">
-                        <h3 className="text-2xl font-black mb-6 tracking-tight">New Pocket</h3>
-                        <div className="space-y-4">
-                            <input type="text" placeholder="Pocket Name" value={newAccountName} onChange={(e) => setNewAccountName(e.target.value)} className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-6 py-4 font-bold outline-none" />
-                            <input type="number" placeholder="Savings Goal" value={newAccountGoal} onChange={(e) => setNewAccountGoal(e.target.value)} className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-6 py-4 font-bold outline-none" />
+                    <div className="bg-white rounded-[2rem] p-8 w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-300">
+                        <div className="flex justify-between items-start mb-8">
+                            <div>
+                                <h3 className="text-2xl font-bold text-slate-900 tracking-tight">New Pocket</h3>
+                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Create a savings sub-pocket</p>
+                            </div>
+                            <button onClick={() => setShowCreateModal(false)} className="w-8 h-8 bg-slate-50 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-900 transition-colors">
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" /></svg>
+                            </button>
                         </div>
-                        <div className="flex gap-3 mt-8">
-                            <button onClick={() => setShowCreateModal(false)} className="flex-1 py-4 font-bold text-slate-400 bg-slate-50 rounded-2xl transition-all">Cancel</button>
-                            <button onClick={submitCreateAccount} className="flex-1 py-4 font-bold text-white bg-[#065f46] rounded-2xl shadow-lg active:scale-95 transition-all">Create</button>
+                        
+                        <div className="space-y-6">
+                            <div>
+                                <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 mb-2 block tracking-tight">Pocket Name</label>
+                                <input type="text" placeholder="e.g. Travel Fund" value={newAccountName} onChange={(e) => setNewAccountName(e.target.value)} className="w-full bg-slate-50 border-2 border-slate-50 p-5 rounded-xl outline-none focus:border-slate-500/20 font-black text-xl" />
+                            </div>
+                            <div>
+                                <label className="text-[10px] font-bold text-slate-400 uppercase ml-1 mb-2 block tracking-tight">Savings Goal (THB)</label>
+                                <input type="number" placeholder="0.00" value={newAccountGoal} onChange={(e) => setNewAccountGoal(e.target.value)} className="w-full bg-slate-50 border-2 border-slate-50 p-5 rounded-xl outline-none focus:border-slate-500/20 font-black text-xl" />
+                            </div>
+                            
+                            <div className="pt-2 flex flex-col gap-2">
+                                <button onClick={submitCreateAccount} className="w-full py-4 bg-slate-900 text-white font-bold rounded-xl shadow-lg uppercase text-[11px] active:scale-95 transition-all">Create Pocket</button>
+                                <button onClick={() => setShowCreateModal(false)} className="w-full py-2 font-bold text-slate-400 text-[10px] text-center hover:text-slate-900 transition-all uppercase tracking-widest">Go Back</button>
+                            </div>
                         </div>
                     </div>
                 </div>
             )}
-            <PinModal 
-                isOpen={isPinModalOpen}
-                onClose={() => setIsPinModalOpen(false)}
-                onSuccess={handlePinSuccess}
-                mode={pinMode}
-                userId={user?.id}
-            />
+
+            {showAddFavModal && (
+                <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm tracking-tight text-slate-800">
+                    <div className="bg-white rounded-[2rem] p-8 w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-300">
+                        <div className="flex justify-between items-start mb-8">
+                            <div>
+                                <h3 className="text-3xl font-bold text-slate-900 tracking-tight text-left">Add Favorite</h3>
+                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Quick transfer recipient</p>
+                            </div>
+                            <button onClick={() => setShowAddFavModal(false)} className="w-8 h-8 bg-slate-50 text-slate-400 rounded-full flex items-center justify-center hover:bg-rose-50 hover:text-rose-500 transition-all shadow-sm">
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" /></svg>
+                            </button>
+                        </div>
+                        
+                        <div className="space-y-5">
+                            <div>
+                                <label className="text-[9px] font-bold text-slate-400 uppercase ml-1 mb-1 block tracking-tight">Nickname</label>
+                                <input 
+                                    type="text" 
+                                    placeholder="e.g. Mom"
+                                    autoComplete="off"
+                                    spellCheck="false"
+                                    value={newFav.nickname} 
+                                    onChange={(e) => setNewFav({ ...newFav, nickname: e.target.value })} 
+                                    className="w-full bg-slate-50 border border-slate-100 p-4 rounded-xl outline-none focus:border-emerald-200 focus:bg-white transition-all font-bold text-sm" 
+                                />
+                            </div>
+
+                            <div>
+                                <label className="text-[9px] font-bold text-slate-400 uppercase ml-1 mb-1 block tracking-tight">Account Number (10 digits)</label>
+                                <div className="relative">
+                                    <input 
+                                        type="text" 
+                                        maxLength={10}
+                                        placeholder="10 digits"
+                                        autoComplete="off"
+                                        spellCheck="false"
+                                        value={newFav.accountNumber} 
+                                        onChange={(e) => {
+                                            const val = e.target.value.replace(/\D/g, '').slice(0, 10);
+                                            setNewFav({ ...newFav, accountNumber: val });
+                                        }} 
+                                        className="w-full bg-slate-50 border border-slate-100 p-4 rounded-xl outline-none focus:border-emerald-200 focus:bg-white transition-all font-bold text-sm tracking-widest" 
+                                    />
+                                    {newFav.accountNumber.length === 10 && (
+                                        <div className="absolute right-4 top-1/2 -translate-y-1/2 scale-75">
+                                            {newFav.ownerName && !newFav.ownerName.includes('checking') && !newFav.ownerName.includes('ไม่พบ') ? (
+                                                <svg className="w-5 h-5 text-emerald-500" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" /></svg>
+                                            ) : newFav.ownerName?.includes('checking') ? (
+                                                <div className="w-4 h-4 border-2 border-slate-200 border-t-emerald-500 rounded-full animate-spin"></div>
+                                            ) : newFav.ownerName?.includes('ไม่พบ') ? (
+                                                <svg className="w-5 h-5 text-rose-500" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414-1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" /></svg>
+                                            ) : null}
+                                        </div>
+                                    )}
+                                </div>
+                                {newFav.accountNumber.length === 10 && newFav.ownerName && (
+                                    <p className={`mt-2 text-[10px] font-black uppercase ml-1 italic transition-all ${newFav.ownerName.includes('ไม่พบ') ? 'text-rose-500' : 'text-emerald-600'}`}>
+                                        {newFav.ownerName}
+                                    </p>
+                                )}
+                            </div>
+                            
+                            <div className="pt-2 flex flex-col gap-2">
+                                <button 
+                                    onClick={handleAddFavorite} 
+                                    disabled={isAddingFav || !newFav.ownerName || newFav.ownerName.includes('checking') || newFav.ownerName.includes('ไม่พบ')}
+                                    className="w-full py-4 bg-slate-900 text-white font-bold rounded-xl shadow-lg uppercase text-[10px] active:scale-95 transition-all hover:bg-slate-800 disabled:opacity-20 disabled:cursor-not-allowed tracking-widest"
+                                >
+                                    {isAddingFav ? 'Saving...' : 'Confirm & Save'}
+                                </button>
+                                <button onClick={() => setShowAddFavModal(false)} className="w-full py-1 font-bold text-slate-300 text-[9px] text-center hover:text-slate-900 transition-all uppercase tracking-widest">Done</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
                     </div>
                 );
             })()}
         </LoadingGuard>
     );
 };
+
 
 export default Portal;

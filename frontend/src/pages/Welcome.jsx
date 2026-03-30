@@ -6,7 +6,7 @@ const Welcome = () => {
     const navigate = useNavigate();
     return (
         <WelcomeLayout>
-            <div className="w-full max-w-[480px] animate-in fade-in slide-in-from-right-10 duration-700">
+            <div className="w-full max-w-[480px]">
                 <div className="mb-12">
                     <h1 className="text-4xl md:text-5xl lg:text-6xl font-black text-slate-900 mb-6 tracking-tight leading-[1.1]">
                         Elevate Your <br />

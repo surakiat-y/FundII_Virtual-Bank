@@ -42,7 +42,7 @@ const StatusNotification = ({ isOpen, onClose, status }) => {
             "All funds and assets are frozen pending legal review.",
             "Access to this portal will be restricted upon logout."
         ],
-        buttonText: "Close",
+        buttonText: "Close and Logout",
         buttonColor: "bg-rose-600"
     };
 

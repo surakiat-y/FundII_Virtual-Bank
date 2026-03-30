@@ -27,7 +27,7 @@ public class AuthController {
         try {
             Map<String, Object> result = userService.registerUser(user);
             return ResponseEntity.ok(Map.of(
-                "message", "สมัครสมาชิกสำเร็จ!",
+                "message", "Registration successful!",
                 "accountNumber", result.get("accountNumber")
             ));
         } catch (RuntimeException e) {
@@ -37,7 +37,6 @@ public class AuthController {
 
 
     @PostMapping("/login")
-
     public ResponseEntity<?> login(@RequestBody User loginData) {
         Optional<User> userOpt = userRepository.findByUsername(loginData.getUsername());
 
@@ -46,7 +45,7 @@ public class AuthController {
 
             // 🔥 เพิ่มใหม่: เช็คสถานะการแบนก่อนให้เข้าสู่ระบบ
             if ("BANNED".equals(user.getStatus())) {
-                return ResponseEntity.status(403).body(Map.of("error", "บัญชีของคุณถูกระงับการใช้งาน! กรุณาติดต่อแอดมิน"));
+                return ResponseEntity.status(403).body(Map.of("error", "Your account is banned! Please contact support."));
             }
 
             Map<String, Object> safeUserData = new HashMap<>();
@@ -56,28 +55,19 @@ public class AuthController {
             safeUserData.put("lastName", user.getLastName());
             safeUserData.put("role", user.getRole());
             safeUserData.put("status", user.getStatus());
-            safeUserData.put("hasPin", user.getPin() != null && !user.getPin().isEmpty());
 
             return ResponseEntity.ok(safeUserData);
         } else {
-            return ResponseEntity.badRequest().body(Map.of("error", "Username หรือ Password ไม่ถูกต้อง!"));
+            return ResponseEntity.badRequest().body(Map.of("error", "Invalid username or password!"));
         }
     }
 
     @GetMapping("/status/{userId}")
     public ResponseEntity<?> getStatus(@PathVariable Long userId) {
-        System.out.println("Checking status for userId: " + userId);
-        return userRepository.findById(userId)
-                .map(user -> {
-                    System.out.println("User found: " + user.getUsername() + " Status: " + user.getStatus());
-                    return ResponseEntity.ok(Map.of(
-                        "status", user.getStatus(),
-                        "hasPin", user.getPin() != null && !user.getPin().isEmpty()
-                    ));
-                })
-                .orElseGet(() -> {
-                    System.out.println("User not found for ID: " + userId);
-                    return ResponseEntity.notFound().build();
-                });
+        Optional<User> userOpt = userRepository.findById(userId);
+        if (userOpt.isPresent()) {
+            return ResponseEntity.ok(Map.of("status", userOpt.get().getStatus()));
+        }
+        return ResponseEntity.notFound().build();
     }
-}
+}
