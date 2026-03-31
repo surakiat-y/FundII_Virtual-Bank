@@ -4,10 +4,10 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
-import lombok.Data; // ถ้าโบรใช้ Lombok สำหรับ Getter/Setter
+import lombok.Data;
 
 @Entity
-@Data // ถ้าใช้ Lombok แดงที่คำว่า Getter/Setter จะหายไปเอง
+@Data
 public class Fund {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -16,4 +16,5 @@ public class Fund {
     private String fundName;
     private Double nav;
     private String type;
+    private String marketStatus = "ACTIVE"; // ACTIVE or PAUSED
 }

@@ -25,9 +25,8 @@ public class FundService {
             // ปัดเศษ 4 ตำแหน่งให้เหมือนกองทุนจริง
             newNav = Math.round(newNav * 10000.0) / 10000.0;
             
-            fund.setNav(newNav);
-            fundRepository.save(fund);
+            fundRepository.updateNav(fund.getId(), newNav);
         }
-        System.out.println(">>> Market Updated: NAV prices shifted!");
+        System.out.println(">>> Market Updated: NAV prices shifted atomically!");
     }
 }

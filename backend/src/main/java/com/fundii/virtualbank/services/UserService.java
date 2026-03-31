@@ -9,6 +9,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Optional;
 
 @Service
@@ -20,12 +22,18 @@ public class UserService {
     @Autowired
     private AccountRepository accountRepository; // เพิ่ม Repository ของบัญชี
 
-    @Transactional // ถ้าสร้าง User สำเร็จแต่สร้าง Account พลาด ระบบจะ Rollback ให้ (ไม่สมัคร User ให้)
-    public User registerUser(User user) {
-        // 1. เช็คว่ามี Username นี้ซ้ำในระบบหรือยัง
+    @Transactional // ถ้าสร้าง User สำเร็จแต่สร้าง Account พลาด ระบบจะ Rollback ให้ (ไม่สมัคร User
+                   // ให้)
+    public Map<String, Object> registerUser(User user) {
+        // 1. เช็คความยาวอย่างน้อย 8 ตัวอักษร
+        if (user.getPassword() == null || user.getPassword().length() < 8) {
+            throw new RuntimeException("Password must be at least 8 characters long.");
+        }
+
+        // 2. เช็คว่ามี Username นี้ซ้ำในระบบหรือยัง
         Optional<User> existingUser = userRepository.findByUsername(user.getUsername());
         if (existingUser.isPresent()) {
-            throw new RuntimeException("Username นี้มีคนใช้แล้วครับ!");
+            throw new RuntimeException("This username is already taken!");
         }
 
         // 2. ตั้งค่าเริ่มต้นให้ User
@@ -49,6 +57,11 @@ public class UserService {
         // 5. บันทึก Account ลง Database
         accountRepository.save(mainAccount);
 
-        return savedUser;
+        // 6. เตรียมข้อมูลส่งกลับ
+        Map<String, Object> result = new HashMap<>();
+        result.put("user", savedUser);
+        result.put("accountNumber", accNum);
+
+        return result;
     }
 }

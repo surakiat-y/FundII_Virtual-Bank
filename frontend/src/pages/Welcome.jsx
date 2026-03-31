@@ -1,12 +1,12 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import BankingLayout from '../components/BankingLayout';
+import WelcomeLayout from '../components/WelcomeLayout';
 
 const Welcome = () => {
     const navigate = useNavigate();
     return (
-        <BankingLayout>
-            <div className="w-full max-w-[480px] animate-in fade-in slide-in-from-right-10 duration-700">
+        <WelcomeLayout>
+            <div className="w-full max-w-[480px]">
                 <div className="mb-12">
                     <h1 className="text-4xl md:text-5xl lg:text-6xl font-black text-slate-900 mb-6 tracking-tight leading-[1.1]">
                         Elevate Your <br />
@@ -36,7 +36,7 @@ const Welcome = () => {
                     </button>
                 </div>
             </div>
-        </BankingLayout>
+        </WelcomeLayout>
     );
 };
 

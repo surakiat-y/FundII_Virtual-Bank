@@ -1,89 +1,119 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import api from '../utils/axios';
 import { useNavigate } from 'react-router-dom';
+import NavbarAdmin from '../components/Navbar-Admin';
 
 const AdminDashboard = () => {
-    const navigate = useNavigate();
-    const [admin, setAdmin] = useState(null);
+    const [activeTab, setActiveTab] = useState('users');
     const [users, setUsers] = useState([]);
-    const [activeTab, setActiveTab] = useState('users'); // 'users' หรือ 'funds'
-
-    // User States
+    const [funds, setFunds] = useState([]);
     const [selectedUser, setSelectedUser] = useState(null);
     const [userAccounts, setUserAccounts] = useState([]);
-    const [amount, setAmount] = useState('');
+    const [amounts, setAmounts] = useState({}); // Fix: Individual amounts per accountId
     const [isMinting, setIsMinting] = useState(false);
-
-    // Fund States
-    const [funds, setFunds] = useState([]);
     const [fundData, setFundData] = useState({ fundCode: '', fundName: '', nav: '', type: 'Low Risk' });
-
-    const fetchAllUsers = () => {
-        fetch('http://localhost:8080/api/admin/users')
-            .then(res => res.json())
-            .then(data => setUsers(data.filter(u => u.role === 'USER')))
-            .catch(err => console.error(err));
-    };
-
-    const fetchAllFunds = () => {
-        fetch('http://localhost:8080/api/funds')
-            .then(res => res.json())
-            .then(data => setFunds(data))
-            .catch(err => console.error(err));
-    };
+    const navigate = useNavigate();
+    
+    // Check for admin user in localStorage
+    const admin = JSON.parse(localStorage.getItem('user'));
 
     useEffect(() => {
-        const loggedInUser = localStorage.getItem('user');
-        if (!loggedInUser) { navigate('/login'); return; }
-        const userData = JSON.parse(loggedInUser);
-        if (userData.role !== 'ADMIN') { navigate('/dashboard'); return; }
-        setAdmin(userData);
-        fetchAllUsers();
-        fetchAllFunds();
+        if (!admin || admin.role !== 'ADMIN') {
+            navigate('/login');
+            return;
+        }
+        fetchData();
+    }, [admin, navigate]);
 
-        const interval = setInterval(fetchAllFunds, 30000);
-        return () => clearInterval(interval);
-    }, [navigate]);
-
-    const handleUpdateStatus = async (userId, newStatus) => {
-        if (!window.confirm(`ยืนยันการเปลี่ยนสถานะเป็น ${newStatus}?`)) return;
-        await fetch(`http://localhost:8080/api/admin/user/${userId}/status`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ status: newStatus })
-        });
-        fetchAllUsers();
+    const fetchData = async () => {
+        try {
+            const [usersRes, fundsRes] = await Promise.all([
+                api.get('/admin/users'),
+                api.get('/funds')
+            ]);
+            setUsers(usersRes.data);
+            setFunds(fundsRes.data);
+        } catch (error) {
+            console.error('Error fetching admin data:', error);
+        }
     };
 
-    const handleManageUser = (user) => {
-        setSelectedUser(user);
-        fetch(`http://localhost:8080/api/accounts/user/${user.id}`)
-            .then(res => res.json())
-            .then(data => setUserAccounts(data));
+    const handleUpdateStatus = async (userId, status) => {
+        try {
+            await api.post(`/admin/user/${userId}/status`, { status });
+            fetchData();
+        } catch (error) {
+            console.error('Error updating status:', error);
+            alert("Error updating status: " + (error.response?.data || error.message));
+        }
+    };
+
+    const handleManageUser = async (user) => {
+        try {
+            const accountsRes = await api.get(`/accounts/user/${user.id}`);
+            setUserAccounts(accountsRes.data);
+            setSelectedUser(user);
+            setAmounts({}); // Reset inputs when opening modal
+        } catch (error) {
+            console.error('Error fetching user accounts:', error);
+            alert("Error fetching accounts: " + (error.response?.data || error.message));
+        }
     };
 
     const mintMoney = async (accountId) => {
-        if (!amount || Number(amount) <= 0) return;
+        const amountToMint = amounts[accountId];
+        if (!amountToMint || isNaN(amountToMint) || amountToMint <= 0) {
+            alert("Please enter a valid amount");
+            return;
+        }
         setIsMinting(true);
-        const response = await fetch('http://localhost:8080/api/admin/mint-money', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ accountId: accountId, amount: Number(amount) })
-        });
-        if (response.ok) { alert("เติมเงินสำเร็จ!"); setAmount(''); handleManageUser(selectedUser); }
-        setIsMinting(false);
+        try {
+            await api.post(`/admin/mint-money`, {
+                accountId,
+                amount: parseFloat(amountToMint)
+            });
+            // Refresh user data to show new balance
+            handleManageUser(selectedUser);
+            setAmounts(prev => ({ ...prev, [accountId]: '' }));
+        } catch (error) {
+            console.error('Error minting money:', error);
+            alert("Error issuing money: " + (error.response?.data || error.message));
+        } finally {
+            setIsMinting(false);
+        }
     };
 
     const handleAddFund = async (e) => {
         e.preventDefault();
-        const res = await fetch('http://localhost:8080/api/funds/add', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ...fundData, nav: parseFloat(fundData.nav) })
-        });
-        if (res.ok) {
-            alert("Launch Fund สำเร็จ!");
+        try {
+            await api.post('/funds/add', fundData);
             setFundData({ fundCode: '', fundName: '', nav: '', type: 'Low Risk' });
-            fetchAllFunds();
+            fetchData();
+            alert("Fund added successfully!");
+        } catch (error) {
+            console.error('Error adding fund:', error);
+            alert("Error adding fund: " + (error.response?.data || error.message));
+        }
+    };
+
+    const handleToggleFundStatus = async (fundId) => {
+        try {
+            await api.put(`/funds/${fundId}/status`);
+            fetchData();
+        } catch (error) {
+            console.error('Error toggling fund status:', error);
+        }
+    };
+
+    const handleDeleteFund = async (fundId) => {
+        if (!window.confirm("คุณแน่ใจนะโบร? ลบแล้วกู้คืนไม่ได้นะ!")) return;
+        try {
+            await api.delete(`/funds/${fundId}`);
+            fetchData();
+        } catch (error) {
+            console.error('Error deleting fund:', error);
+            const msg = error.response?.data?.error || error.message;
+            alert("❌ " + msg);
         }
     };
 
@@ -92,30 +122,24 @@ const AdminDashboard = () => {
     return (
         <div className="min-h-screen bg-slate-950 text-white font-sans selection:bg-emerald-500/30">
             {/* --- Navbar --- */}
-            <nav className="bg-slate-900/50 backdrop-blur-xl border-b border-white/5 px-8 py-4 flex justify-between items-center sticky top-0 z-40">
-                <div className="flex items-center gap-6">
-                    <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-400 to-teal-600 flex items-center justify-center font-black text-slate-900 shadow-lg shadow-emerald-500/20">A</div>
-                        <span className="font-bold tracking-tight">Admin Portal</span>
-                    </div>
-                    <div className="flex bg-slate-800/50 p-1 rounded-xl border border-white/5 ml-4 shadow-inner">
-                        <button onClick={() => setActiveTab('users')} className={`px-5 py-2 rounded-lg text-xs font-black transition-all ${activeTab === 'users' ? 'bg-emerald-500 text-slate-950 shadow-lg' : 'text-slate-400 hover:text-white'}`}>User Management</button>
-                        <button onClick={() => setActiveTab('funds')} className={`px-5 py-2 rounded-lg text-xs font-black transition-all ${activeTab === 'funds' ? 'bg-emerald-500 text-slate-950 shadow-lg' : 'text-slate-400 hover:text-white'}`}>Fund Management</button>
-                    </div>
-                </div>
-                <div className="flex items-center gap-6">
-                    <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Welcome, {admin.firstName}</span>
-                    <button onClick={() => { localStorage.removeItem('user'); navigate('/login'); }} className="text-xs font-black text-rose-500 hover:text-rose-400 transition-colors uppercase tracking-widest border border-rose-500/20 px-4 py-2 rounded-xl hover:bg-rose-500/5">Log Out</button>
-                </div>
-            </nav>
+            <NavbarAdmin 
+                admin={admin} 
+                activeTab={activeTab} 
+                setActiveTab={setActiveTab} 
+                onLogout={() => { localStorage.removeItem('user'); navigate('/login'); }} 
+            />
 
             <main className="max-w-7xl mx-auto p-8">
                 {activeTab === 'users' ? (
-                    <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-                        <h1 className="text-4xl font-black mb-8 tracking-tighter flex items-center gap-4">
-                            User Registry
-                            <span className="text-xs font-bold bg-white/5 text-slate-500 px-3 py-1 rounded-full border border-white/5">{users.length} Total</span>
-                        </h1>
+                    <div>
+                        <div className="flex justify-between items-end mb-8">
+                            <h1 className="text-4xl font-black tracking-tighter flex items-center gap-4">
+                                User Registry
+                            </h1>
+                            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-500/50 bg-emerald-500/5 px-4 py-2 rounded-full border border-emerald-500/10">
+                                {users.filter(u => u.role !== 'ADMIN').length} Active Records
+                            </span>
+                        </div>
                         <div className="bg-slate-900 border border-white/10 rounded-[2.5rem] overflow-hidden shadow-2xl">
                             <table className="w-full text-left border-collapse">
                                 <thead>
@@ -127,7 +151,7 @@ const AdminDashboard = () => {
                                     </tr>
                                 </thead>
                                 <tbody className="text-sm divide-y divide-white/5">
-                                    {users.map(user => (
+                                    {users.filter(u => u.role !== 'ADMIN').map(user => (
                                         <tr key={user.id} className="hover:bg-white/[0.01] transition-colors group">
                                             <td className="p-8 font-mono text-slate-500 text-xs tracking-tighter group-hover:text-slate-300">#{user.id}</td>
                                             <td className="p-8">
@@ -142,11 +166,30 @@ const AdminDashboard = () => {
                                                 }`}> {user.status} </span>
                                             </td>
                                             <td className="p-8">
-                                                <div className="flex gap-2 justify-end">
-                                                    <button onClick={() => handleManageUser(user)} className="bg-white text-slate-950 text-[10px] font-black px-5 py-2.5 rounded-xl uppercase tracking-widest hover:bg-emerald-400 transition-all active:scale-95 shadow-lg shadow-white/5">Manage</button>
-                                                    <button onClick={() => handleUpdateStatus(user.id, 'ACTIVE')} className="bg-slate-800 text-white text-[10px] font-black px-4 py-2.5 rounded-xl uppercase border border-white/10 hover:bg-slate-700 transition-all">Active</button>
-                                                    <button onClick={() => handleUpdateStatus(user.id, 'SUSPENDED')} className="bg-amber-500/5 text-amber-500 text-[10px] font-black px-4 py-2.5 rounded-xl uppercase border border-amber-500/20 hover:bg-amber-500/20">Suspend</button>
-                                                    <button onClick={() => handleUpdateStatus(user.id, 'BANNED')} className="bg-rose-500/5 text-rose-500 text-[10px] font-black px-4 py-2.5 rounded-xl uppercase border border-rose-500/20 hover:bg-rose-500/20">Ban</button>
+                                                <div className="flex gap-4 items-center justify-end">
+                                                    <button onClick={() => handleManageUser(user)} className="bg-white text-slate-950 text-[10px] font-black px-5 py-2.5 rounded-xl uppercase tracking-widest hover:bg-emerald-400 transition-all active:scale-95 shadow-lg shadow-white/5 mr-4">Manage</button>
+                                                    
+                                                    {/* Status Toggle Group */}
+                                                    <div className="flex bg-slate-800/50 p-1 rounded-xl border border-white/5">
+                                                        <button 
+                                                            onClick={() => handleUpdateStatus(user.id, 'ACTIVE')}
+                                                            className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${user.status === 'ACTIVE' ? 'bg-emerald-500 text-slate-950 shadow-lg shadow-emerald-500/20' : 'text-slate-500 hover:text-white'}`}
+                                                        >
+                                                            Active
+                                                        </button>
+                                                        <button 
+                                                            onClick={() => handleUpdateStatus(user.id, 'SUSPENDED')}
+                                                            className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${user.status === 'SUSPENDED' ? 'bg-amber-500 text-slate-950 shadow-lg shadow-amber-500/20' : 'text-slate-500 hover:text-white'}`}
+                                                        >
+                                                            Suspend
+                                                        </button>
+                                                        <button 
+                                                            onClick={() => handleUpdateStatus(user.id, 'BANNED')}
+                                                            className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${user.status === 'BANNED' ? 'bg-rose-500 text-slate-950 shadow-lg shadow-rose-500/20' : 'text-slate-500 hover:text-white'}`}
+                                                        >
+                                                            Ban
+                                                        </button>
+                                                    </div>
                                                 </div>
                                             </td>
                                         </tr>
@@ -156,8 +199,7 @@ const AdminDashboard = () => {
                         </div>
                     </div>
                 ) : (
-                    // --- Fund Management UI (High Contrast) ---
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-10 animate-in fade-in duration-700">
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
                         <div className="lg:col-span-1">
                             <h2 className="text-3xl font-black mb-6 tracking-tight flex items-center gap-3 text-white">
                                 <span className="w-2 h-8 bg-emerald-500 rounded-full"></span>
@@ -199,7 +241,9 @@ const AdminDashboard = () => {
                                     <thead>
                                         <tr className="bg-white/[0.03] text-[10px] uppercase tracking-[0.2em] text-slate-500 border-b border-white/5">
                                             <th className="p-8">Asset Description</th>
+                                            <th className="p-8 text-center">Status</th>
                                             <th className="p-8 text-right">Market NAV (Live)</th>
+                                            <th className="p-8 text-right">Actions</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-white/5">
@@ -207,17 +251,44 @@ const AdminDashboard = () => {
                                             <tr key={fund.id} className="hover:bg-white/[0.01] transition-colors group">
                                                 <td className="p-8">
                                                     <div className="flex items-center gap-5">
-                                                        <div className="w-12 h-12 bg-slate-800 rounded-2xl flex items-center justify-center font-black text-emerald-400 border border-white/5 group-hover:border-emerald-500/30 transition-all uppercase">{fund.fundCode.slice(0, 2)}</div>
+                                                        <div className="w-12 h-12 bg-slate-800 rounded-2xl flex items-center justify-center font-black text-emerald-400 border border-white/5 group-hover:border-emerald-500/30 transition-all uppercase">{(fund.fundCode || "??").slice(0, 2)}</div>
                                                         <div>
                                                             <div className="font-black text-white text-lg tracking-tight uppercase">{fund.fundCode}</div>
                                                             <div className="text-slate-400 font-bold text-xs uppercase tracking-tight">{fund.fundName}</div>
-                                                            <div className={`text-[9px] mt-1.5 inline-block px-2.5 py-0.5 rounded-md font-black uppercase tracking-tighter ${fund.type === 'High Risk' ? 'bg-rose-500/10 text-rose-500 border border-rose-500/20' : fund.type === 'Medium Risk' ? 'bg-amber-500/10 text-amber-500 border border-amber-500/20' : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'}`}> {fund.type} </div>
+                                                            <div className={`text-[9px] mt-1.5 inline-block px-2.5 py-0.5 rounded-md font-black uppercase tracking-tighter ${fund.type === 'High Risk' ? 'bg-rose-500/10 text-rose-500 border border-rose-500/20' : fund.type === 'Medium Risk' ? 'bg-amber-500/10 text-amber-500 border-amber-500/20' : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'}`}> {fund.type} </div>
                                                         </div>
                                                     </div>
                                                 </td>
+                                                <td className="p-8 text-center">
+                                                    <span className={`text-[10px] font-black uppercase px-3 py-1 rounded-full border ${(fund.marketStatus === 'ACTIVE' || !fund.marketStatus) ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-amber-500/10 text-amber-500 border-amber-500/20'}`}>
+                                                        {fund.marketStatus || 'ACTIVE'}
+                                                    </span>
+                                                </td>
                                                 <td className="p-8 text-right font-mono">
-                                                    <div className="text-3xl font-black text-white tracking-tighter tabular-nums group-hover:text-emerald-400 transition-colors">{fund.nav.toFixed(4)}</div>
+                                                    <div className="text-3xl font-black text-white tracking-tighter tabular-nums group-hover:text-emerald-400 transition-colors">{(fund.nav || 0).toFixed(4)}</div>
                                                     <div className="text-[10px] text-emerald-500 font-bold uppercase tracking-widest mt-1">THB / Unit</div>
+                                                </td>
+                                                <td className="p-8 text-right">
+                                                    <div className="flex gap-2 justify-end">
+                                                        <button 
+                                                            onClick={() => handleToggleFundStatus(fund.id)}
+                                                            className={`p-3 rounded-xl border transition-all ${(fund.marketStatus === 'ACTIVE' || !fund.marketStatus) ? 'bg-amber-400/5 text-amber-400 border-amber-400/20 hover:bg-amber-400/20' : 'bg-emerald-400/5 text-emerald-400 border-emerald-400/20 hover:bg-emerald-400/20'}`}
+                                                            title={(fund.marketStatus === 'ACTIVE' || !fund.marketStatus) ? 'Pause Fund' : 'Resume Fund'}
+                                                        >
+                                                            {(fund.marketStatus === 'ACTIVE' || !fund.marketStatus) ? (
+                                                                <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+                                                            ) : (
+                                                                <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                                                            )}
+                                                        </button>
+                                                        <button 
+                                                            onClick={() => handleDeleteFund(fund.id)}
+                                                            className="p-3 rounded-xl border bg-rose-500/5 text-rose-500 border-rose-500/20 hover:bg-rose-500/20 transition-all"
+                                                            title="Delete Fund"
+                                                        >
+                                                            <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+                                                        </button>
+                                                    </div>
                                                 </td>
                                             </tr>
                                         ))}
@@ -232,11 +303,11 @@ const AdminDashboard = () => {
             {/* --- Mint Money Modal --- */}
             {selectedUser && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-xl">
-                    <div className="bg-slate-900 border border-white/10 rounded-[3rem] p-10 w-full max-w-2xl shadow-2xl animate-in zoom-in-95 duration-300">
+                    <div className="bg-slate-900 border border-white/10 rounded-[3rem] p-10 w-full max-w-2xl shadow-2xl">
                         <div className="flex justify-between items-center mb-10">
                             <div>
-                                <h3 className="text-3xl font-black tracking-tight text-white">Central Minting</h3>
-                                <p className="text-slate-500 font-bold text-sm mt-1 uppercase tracking-widest">Issuing currency for {selectedUser.firstName}</p>
+                                <h3 className="text-3xl font-black tracking-tight text-white">Manage User Wallets</h3>
+                                <p className="text-slate-500 font-bold text-sm mt-1 uppercase tracking-widest">Adding to wallets for {selectedUser.firstName} {selectedUser.lastName}</p>
                             </div>
                             <button onClick={() => setSelectedUser(null)} className="w-12 h-12 bg-slate-800 rounded-full flex items-center justify-center text-slate-400 hover:text-white transition-all hover:rotate-90">✕</button>
                         </div>
@@ -248,8 +319,14 @@ const AdminDashboard = () => {
                                         <p className="text-emerald-400 font-black text-3xl font-mono tracking-tighter">฿{account.balance.toLocaleString()}</p>
                                     </div>
                                     <div className="flex gap-3">
-                                        <input type="number" placeholder="Amount" value={amount} onChange={(e) => setAmount(e.target.value)} className="w-28 bg-slate-800 border border-white/10 rounded-2xl px-4 py-3 text-white font-bold text-sm outline-none focus:border-emerald-500 transition-all" />
-                                        <button onClick={() => mintMoney(account.id)} disabled={isMinting} className="bg-emerald-500 text-slate-950 font-black px-6 py-3 rounded-2xl text-[10px] uppercase tracking-widest shadow-lg shadow-emerald-500/20 active:scale-95 transition-all">Issue</button>
+                                        <input 
+                                            type="number" 
+                                            placeholder="Amount" 
+                                            value={amounts[account.id] || ''} 
+                                            onChange={(e) => setAmounts({ ...amounts, [account.id]: e.target.value })} 
+                                            className="w-48 bg-slate-800 border border-white/10 rounded-2xl px-4 py-3 text-white font-black text-lg outline-none focus:border-emerald-500 transition-all text-right" 
+                                        />
+                                        <button onClick={() => mintMoney(account.id)} disabled={isMinting} className="bg-emerald-500 text-slate-950 font-black px-6 py-3 rounded-2xl text-xl hover:bg-emerald-400 active:scale-95 transition-all shadow-lg shadow-emerald-500/20">+</button>
                                     </div>
                                 </div>
                             ))}

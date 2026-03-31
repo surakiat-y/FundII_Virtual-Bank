@@ -25,12 +25,16 @@ public class AuthController {
     @PostMapping("/register")
     public ResponseEntity<?> register(@RequestBody User user) {
         try {
-            User newUser = userService.registerUser(user);
-            return ResponseEntity.ok(Map.of("message", "สมัครสมาชิกสำเร็จ!"));
+            Map<String, Object> result = userService.registerUser(user);
+            return ResponseEntity.ok(Map.of(
+                "message", "Registration successful!",
+                "accountNumber", result.get("accountNumber")
+            ));
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
     }
+
 
     @PostMapping("/login")
     public ResponseEntity<?> login(@RequestBody User loginData) {
@@ -41,7 +45,7 @@ public class AuthController {
 
             // 🔥 เพิ่มใหม่: เช็คสถานะการแบนก่อนให้เข้าสู่ระบบ
             if ("BANNED".equals(user.getStatus())) {
-                return ResponseEntity.status(403).body(Map.of("error", "บัญชีของคุณถูกระงับการใช้งาน! กรุณาติดต่อแอดมิน"));
+                return ResponseEntity.status(403).body(Map.of("error", "Your account is banned! Please contact support."));
             }
 
             Map<String, Object> safeUserData = new HashMap<>();
@@ -54,7 +58,16 @@ public class AuthController {
 
             return ResponseEntity.ok(safeUserData);
         } else {
-            return ResponseEntity.badRequest().body(Map.of("error", "Username หรือ Password ไม่ถูกต้อง!"));
+            return ResponseEntity.badRequest().body(Map.of("error", "Invalid username or password!"));
         }
+    }
+
+    @GetMapping("/status/{userId}")
+    public ResponseEntity<?> getStatus(@PathVariable Long userId) {
+        Optional<User> userOpt = userRepository.findById(userId);
+        if (userOpt.isPresent()) {
+            return ResponseEntity.ok(Map.of("status", userOpt.get().getStatus()));
+        }
+        return ResponseEntity.notFound().build();
     }
 }

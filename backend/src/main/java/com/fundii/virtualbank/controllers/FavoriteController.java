@@ -50,4 +50,15 @@ public class FavoriteController {
             return ResponseEntity.badRequest().body(e.getMessage());
         }
     }
+
+    // ลบรายชื่อโปรด
+    @DeleteMapping("/{id}")
+    public ResponseEntity<?> deleteFavorite(@PathVariable Long id) {
+        try {
+            favoriteRepository.deleteById(id);
+            return ResponseEntity.ok(Map.of("message", "Deleted successfully"));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
+        }
+    }
 }
